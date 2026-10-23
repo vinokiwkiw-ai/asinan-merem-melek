@@ -66,7 +66,11 @@ export async function POST(req: NextRequest) {
         expiresInMinutes: otpResult.expiresInMinutes,
         provider: otpResult.provider,
         devOtp: otpResult.devOtp,
-        message: `Kode OTP telah dikirimkan ke nomor ${otpResult.maskedPhone}.`,
+        message: otpResult.devOtp
+          ? (otpResult.error
+              ? `Gateway WhatsApp mengembalikan catatan: "${otpResult.error}". Menggunakan mode simulasi darurat.`
+              : `Mode Simulasi Aktif: Kode OTP tersedia di layar.`)
+          : `Kode OTP telah dikirimkan ke nomor ${otpResult.maskedPhone}.`,
       })
     }
 

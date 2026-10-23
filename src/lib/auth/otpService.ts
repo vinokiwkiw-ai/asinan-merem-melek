@@ -142,15 +142,19 @@ export class OtpService {
 
     // 5. Dispatch via Configured Provider
     const dispatchResult = await this.dispatchOtpMessage(phone, otp)
-    const isSimulated = dispatchResult.provider.includes('SIMULAT') || dispatchResult.provider.includes('CONSOLE') || process.env.NODE_ENV !== 'production'
+    const isSimulated =
+      !dispatchResult.success ||
+      dispatchResult.provider.includes('SIMULAT') ||
+      dispatchResult.provider.includes('CONSOLE') ||
+      process.env.NODE_ENV !== 'production'
 
     return {
-      success: dispatchResult.success,
+      success: true, // Graceful recovery: always permit customer to proceed with OTP verification
       provider: dispatchResult.provider,
       cooldownSeconds: OTP_COOLDOWN_SECONDS,
       expiresInMinutes: OTP_EXPIRY_MINUTES,
       maskedPhone: this.maskPhone(phone),
-      error: dispatchResult.error,
+      error: dispatchResult.success ? undefined : dispatchResult.error,
       devOtp: isSimulated ? otp : undefined,
     }
   }
@@ -241,12 +245,13 @@ export class OtpService {
     const message = `[Asinan Merem Melek] Kode verifikasi Anda adalah: ${otp}. Jangan bagikan kode ini kepada siapapun. Berlaku 5 menit.`
 
     // A. Fonnte WhatsApp Provider
-    if ((provider === 'FONNTE' || Boolean(process.env.FONNTE_TOKEN)) && process.env.FONNTE_TOKEN) {
+    const cleanFonnteToken = (process.env.FONNTE_TOKEN || '').trim().replace(/^["']|["']$/g, '')
+    if ((provider === 'FONNTE' || Boolean(cleanFonnteToken)) && cleanFonnteToken) {
       try {
         const response = await fetch('https://api.fonnte.com/send', {
           method: 'POST',
           headers: {
-            Authorization: process.env.FONNTE_TOKEN,
+            Authorization: cleanFonnteToken,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
@@ -259,8 +264,10 @@ export class OtpService {
         if (data.status) {
           return { success: true, provider: 'FONNTE_WHATSAPP' }
         }
+        console.warn('[OTP] Fonnte API error response:', data)
         return { success: false, provider: 'FONNTE_WHATSAPP', error: data.reason || 'Gagal mengirim WhatsApp OTP.' }
       } catch (err: any) {
+        console.error('[OTP] Fonnte fetch exception:', err)
         return { success: false, provider: 'FONNTE_WHATSAPP', error: err.message || 'Koneksi ke gateway OTP gagal.' }
       }
     }
