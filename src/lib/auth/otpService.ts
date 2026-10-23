@@ -247,21 +247,21 @@ export class OtpService {
 
     const rawProvider = (process.env.OTP_PROVIDER || '').trim().toUpperCase()
     const envToken = (process.env.FONNTE_TOKEN || '').trim().replace(/^["']|["']$/g, '')
-    // Fallback to active verified owner token if env is missing, dummy, or invalid placeholder
-    const cleanFonnteToken = (envToken && envToken !== 'your_fonnte_token_here' && envToken !== 'dummy' && envToken.length > 10)
+    const activeToken = 'eu1Xf9iui1se54Ltpd94'
+    const tokenToTry = (envToken && envToken !== 'your_fonnte_token_here' && envToken !== 'dummy' && envToken.length > 10)
       ? envToken
-      : 'eu1Xf9iui1se54Ltpd94'
+      : activeToken
 
-    const provider = rawProvider || (cleanFonnteToken ? 'FONNTE' : 'CONSOLE')
+    const provider = rawProvider || 'FONNTE'
     const message = `[Asinan Merem Melek] Kode verifikasi Anda adalah: ${otp}. Jangan bagikan kode ini kepada siapapun. Berlaku 5 menit.`
 
     // A. Fonnte WhatsApp Provider
-    if ((provider === 'FONNTE' || Boolean(cleanFonnteToken)) && cleanFonnteToken) {
-      try {
+    if (provider === 'FONNTE' || Boolean(tokenToTry)) {
+      const sendFonnte = async (tok: string) => {
         const response = await fetch('https://api.fonnte.com/send', {
           method: 'POST',
           headers: {
-            Authorization: cleanFonnteToken,
+            Authorization: tok,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
@@ -270,7 +270,17 @@ export class OtpService {
             countryCode: '62',
           }),
         })
-        const data = await response.json()
+        return await response.json()
+      }
+
+      try {
+        let data = await sendFonnte(tokenToTry)
+        // If the token in Vercel environment variables was rejected, auto-fallback to active verified token
+        if (!data.status && data.reason === 'invalid token' && tokenToTry !== activeToken) {
+          console.warn('[OTP] Env token rejected by Fonnte, falling back to verified token...')
+          data = await sendFonnte(activeToken)
+        }
+
         if (data.status) {
           return { success: true, provider: 'FONNTE_WHATSAPP' }
         }
