@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 
-const PROOFS_DIR = path.resolve(process.cwd(), 'data/proofs')
+const PROOFS_DIR = process.env.VERCEL ? path.join('/tmp', 'amm-data/proofs') : path.resolve(process.cwd(), 'data/proofs')
 
 export async function POST(req: NextRequest, { params }: { params: { orderNumber: string } }) {
   try {

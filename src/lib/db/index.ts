@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 
-const DB_DIR = path.resolve(process.cwd(), 'data')
+const DB_DIR = process.env.VERCEL ? path.join('/tmp', 'amm-data') : path.resolve(process.cwd(), 'data')
 const DB_FILE = path.join(DB_DIR, 'amm.db')
 
 let dbInstance: DatabaseSync | null = null

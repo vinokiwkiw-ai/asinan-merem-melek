@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 
-const RECEIPTS_DIR = path.resolve(process.cwd(), 'data/receipts')
+const RECEIPTS_DIR = process.env.VERCEL ? path.join('/tmp', 'amm-data/receipts') : path.resolve(process.cwd(), 'data/receipts')
 
 export async function POST(req: NextRequest, { params }: { params: { orderNumber: string } }) {
   try {

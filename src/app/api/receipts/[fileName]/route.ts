@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import fs from 'node:fs'
 import path from 'node:path'
 
-const RECEIPTS_DIR = path.resolve(process.cwd(), 'data/receipts')
+const RECEIPTS_DIR = process.env.VERCEL ? path.join('/tmp', 'amm-data/receipts') : path.resolve(process.cwd(), 'data/receipts')
 
 export async function GET(req: NextRequest, { params }: { params: { fileName: string } }) {
   try {
