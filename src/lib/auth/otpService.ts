@@ -236,11 +236,12 @@ export class OtpService {
     phone: string,
     otp: string
   ): Promise<{ success: boolean; provider: string; error?: string }> {
-    const provider = process.env.OTP_PROVIDER || 'CONSOLE'
+    const rawProvider = (process.env.OTP_PROVIDER || '').trim().toUpperCase()
+    const provider = rawProvider || (process.env.FONNTE_TOKEN ? 'FONNTE' : 'CONSOLE')
     const message = `[Asinan Merem Melek] Kode verifikasi Anda adalah: ${otp}. Jangan bagikan kode ini kepada siapapun. Berlaku 5 menit.`
 
     // A. Fonnte WhatsApp Provider
-    if (provider === 'FONNTE' && process.env.FONNTE_TOKEN) {
+    if ((provider === 'FONNTE' || Boolean(process.env.FONNTE_TOKEN)) && process.env.FONNTE_TOKEN) {
       try {
         const response = await fetch('https://api.fonnte.com/send', {
           method: 'POST',
