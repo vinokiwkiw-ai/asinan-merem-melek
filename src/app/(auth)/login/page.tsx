@@ -64,8 +64,8 @@ function CustomerLoginForm() {
       setStep('OTP');
       setSuccessMsg(data.message || `Kode OTP telah dikirimkan ke nomor ${data.maskedPhone}.`);
 
-      // Only display simulation OTP hint in non-production local development
-      if (data.devOtp && process.env.NODE_ENV !== 'production') {
+      // Display simulation OTP hint if returned by server (e.g. gateway token unconfigured)
+      if (data.devOtp) {
         setDevOtpHint(data.devOtp);
       }
     } catch (err: any) {
@@ -149,13 +149,20 @@ function CustomerLoginForm() {
         </div>
       )}
 
-      {/* Dev OTP Hint for Local Testing only */}
+      {/* Dev / Gateway Simulation OTP Hint */}
       {devOtpHint && (
-        <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl text-xs text-amber-800 text-center">
-          <span className="font-bold">Kode OTP Simulasi (Dev Mode):</span>{' '}
-          <span className="font-mono font-black text-sm text-amber-900 tracking-wider bg-amber-100 px-2 py-0.5 rounded-lg">
-            {devOtpHint}
-          </span>
+        <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl text-xs text-amber-900 text-center space-y-1.5">
+          <p className="font-bold text-amber-900 flex items-center justify-center gap-1.5">
+            <span>⚠️ Mode Simulasi (Gateway WhatsApp Belum Diaktifkan)</span>
+          </p>
+          <p className="text-[11px] text-amber-700">
+            Gunakan kode OTP berikut untuk masuk langsung:
+          </p>
+          <div className="pt-0.5">
+            <span className="inline-block font-mono font-black text-base text-amber-950 tracking-widest bg-amber-200/80 px-4 py-1 rounded-xl border border-amber-300">
+              {devOtpHint}
+            </span>
+          </div>
         </div>
       )}
 
