@@ -26,6 +26,8 @@ function runMigrations(database: DatabaseSync) {
     { name: 'delivery_issue_reported', sql: 'ALTER TABLE orders ADD COLUMN delivery_issue_reported INTEGER NOT NULL DEFAULT 0;' },
     { name: 'delivery_issue_notes', sql: 'ALTER TABLE orders ADD COLUMN delivery_issue_notes TEXT;' },
     { name: 'delivery_issue_reported_at', sql: 'ALTER TABLE orders ADD COLUMN delivery_issue_reported_at TEXT;' },
+    { name: 'voucher_code', sql: 'ALTER TABLE orders ADD COLUMN voucher_code TEXT;' },
+    { name: 'voucher_id', sql: 'ALTER TABLE orders ADD COLUMN voucher_id TEXT;' },
   ]
 
   for (const col of orderAdditions) {
@@ -140,6 +142,64 @@ function runMigrations(database: DatabaseSync) {
       FOREIGN KEY (admin_id) REFERENCES admin_users(id) ON DELETE CASCADE
     );
   `)
+
+  // 9. Vouchers table migrations
+  const vouchCols = (database.prepare("PRAGMA table_info(vouchers)").all() as any[]).map((c) => c.name)
+  const vouchColSet = new Set(vouchCols)
+  const vouchAdditions = [
+    { name: 'name', sql: 'ALTER TABLE vouchers ADD COLUMN name TEXT;' },
+    { name: 'description', sql: 'ALTER TABLE vouchers ADD COLUMN description TEXT;' },
+    { name: 'usage_limit_per_customer', sql: 'ALTER TABLE vouchers ADD COLUMN usage_limit_per_customer INTEGER NOT NULL DEFAULT 1;' },
+    { name: 'is_archived', sql: 'ALTER TABLE vouchers ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0;' },
+    { name: 'created_at', sql: 'ALTER TABLE vouchers ADD COLUMN created_at TEXT;' },
+    { name: 'updated_at', sql: 'ALTER TABLE vouchers ADD COLUMN updated_at TEXT;' },
+  ]
+  for (const col of vouchAdditions) {
+    if (!vouchColSet.has(col.name)) {
+      database.exec(col.sql)
+    }
+  }
+
+  // 10. Voucher usages tracking table & indexes
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS voucher_usages (
+      id TEXT PRIMARY KEY,
+      voucher_id TEXT NOT NULL,
+      voucher_code TEXT NOT NULL,
+      order_id TEXT NOT NULL,
+      customer_id TEXT NOT NULL,
+      discount_amount INTEGER NOT NULL,
+      used_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (voucher_id) REFERENCES vouchers(id) ON DELETE CASCADE,
+      FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
+      FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_voucher_usages_code_cust ON voucher_usages(voucher_code, customer_id);
+    CREATE INDEX IF NOT EXISTS idx_voucher_usages_order ON voucher_usages(order_id);
+  `)
+
+  // 11. Partial unique index on membership_ledger for absolute EARN idempotency
+  try {
+    database.exec(`
+      DELETE FROM membership_ledger
+      WHERE transaction_type = 'EARN'
+        AND reference_id IS NOT NULL
+        AND rowid NOT IN (
+          SELECT MIN(rowid)
+          FROM membership_ledger
+          WHERE transaction_type = 'EARN'
+            AND reference_id IS NOT NULL
+          GROUP BY reference_id
+        );
+    `)
+    database.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_ledger_earn_idempotency
+      ON membership_ledger(reference_id)
+      WHERE transaction_type = 'EARN';
+    `)
+  } catch (e) {
+    // If index already exists or table setup handled it, ignore
+  }
 }
 
 function ensureSeeded(database: DatabaseSync) {

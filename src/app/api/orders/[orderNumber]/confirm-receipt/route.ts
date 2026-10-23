@@ -22,12 +22,16 @@ export async function POST(req: NextRequest, { params }: { params: { orderNumber
       tracking_token: string
     }>('SELECT * FROM orders WHERE order_number = ?', [orderNumber])
 
-    if (!order) {
-      return NextResponse.json({ error: 'Pesanan tidak ditemukan.' }, { status: 404 })
-    }
+    // Validate authorization: requires valid tracking token OR authenticated customer session
+    const sessionToken = req.cookies.get('amm_customer_session_token')?.value ||
+      (req.headers.get('authorization')?.startsWith('Bearer ') ? req.headers.get('authorization')?.slice(7).trim() : null)
+    const sessionCustomer = sessionToken ? SessionService.getCustomerFromToken(sessionToken) : null
 
-    if (token && order.tracking_token !== token) {
-      return NextResponse.json({ error: 'Token pelacakan tidak sah.' }, { status: 403 })
+    const isTokenValid = Boolean(token && order.tracking_token === token)
+    const isCustomerMatch = Boolean(sessionCustomer && (sessionCustomer.id === order.customer_id || sessionCustomer.phone === order.customer_phone))
+
+    if (!isTokenValid && !isCustomerMatch) {
+      return NextResponse.json({ error: 'Akses tidak sah. Token pelacakan atau sesi login customer diperlukan.' }, { status: 403 })
     }
 
     if (order.customer_confirmed_at) {

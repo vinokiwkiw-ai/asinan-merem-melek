@@ -644,17 +644,9 @@ export class PaymentAdapter {
       }
     })
 
-    // 6. Award Loyalty Points on Paid
-    if (normalizedStatus === 'PAID') {
-      const customerId = order.customer_id || `cust_${order.order_number}`
-      const awardResult = MembershipService.awardOrderPoints({
-        orderNumber: order.order_number,
-        customerId,
-        subtotal: order.subtotal,
-        discount: order.discount || 0,
-      })
-      pointsAwarded = awardResult.points
-    }
+    // 6. Loyalty points are strictly deferred until order status is Selesai/Completed
+    // (Per platform rules, payment verification does not award points until delivery receipt/admin completion)
+    pointsAwarded = 0
 
     return {
       success: true,

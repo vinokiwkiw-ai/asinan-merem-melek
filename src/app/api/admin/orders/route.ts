@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { AdminSessionService } from '@/lib/auth/adminSessionService'
+import { MembershipService } from '@/lib/membership/membershipService'
 
 export async function GET(req: NextRequest) {
   try {
@@ -105,8 +106,16 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'Order ID wajib disertakan.' }, { status: 400 })
     }
 
-    const order = db.queryOne<{ id: string; order_number: string; order_status: string }>(
-      'SELECT id, order_number, order_status FROM orders WHERE id = ?',
+    const order = db.queryOne<{
+      id: string
+      order_number: string
+      order_status: string
+      customer_id: string
+      subtotal: number
+      discount: number
+      total: number
+    }>(
+      'SELECT id, order_number, order_status, customer_id, subtotal, discount, total FROM orders WHERE id = ?',
       [orderId]
     )
 
@@ -180,6 +189,27 @@ export async function PATCH(req: NextRequest) {
         )
       }
     })
+
+    // Automatic Loyalty Points: Award on completion ('selesai')
+    if (targetStatus === 'selesai' && order.order_status !== 'selesai') {
+      MembershipService.awardOrderPoints({
+        orderNumber: order.order_number,
+        customerId: order.customer_id || `cust_${order.order_number}`,
+        subtotal: order.subtotal,
+        discount: order.discount || 0,
+      })
+    }
+
+    // Automatic Loyalty Points: Reverse on cancellation/refund after completed
+    if (order.order_status === 'selesai' && (targetStatus === 'dibatalkan' || targetStatus === 'refund')) {
+      MembershipService.reverseOrderPoints({
+        orderNumber: order.order_number,
+        customerId: order.customer_id || `cust_${order.order_number}`,
+        reason: reasonText || 'Pembatalan pesanan oleh admin',
+        adminId,
+        adminName,
+      })
+    }
 
     return NextResponse.json({
       success: true,

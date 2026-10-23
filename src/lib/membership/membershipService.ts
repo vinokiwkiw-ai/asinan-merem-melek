@@ -85,24 +85,127 @@ export class MembershipService {
       const nowStr = new Date().toISOString()
       const ledgerId = `ledg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`
 
+      try {
+        db.run(
+          `INSERT INTO membership_ledger (
+            id, customer_id, points, transaction_type, reference_id, balance_after, reason, created_at
+          ) VALUES (?, ?, ?, 'EARN', ?, ?, ?, ?)`,
+          [
+            ledgerId,
+            customerId,
+            pointsToAward,
+            orderNumber,
+            newBalance,
+            `Poin loyalitas dari pesanan ${orderNumber} (Belanja produk Rp ${eligibleSpend.toLocaleString('id-ID')})`,
+            nowStr,
+          ]
+        )
+      } catch (err: any) {
+        if (err.message?.includes('UNIQUE') || err.code === 'SQLITE_CONSTRAINT') {
+          return {
+            awarded: false,
+            points: 0,
+            newBalance: this.getCustomerBalance(customerId),
+          }
+        }
+        throw err
+      }
+
+      return {
+        awarded: true,
+        points: pointsToAward,
+        newBalance,
+      }
+    })
+  }
+
+  /**
+   * Idempotently reverse points if an order is refunded, cancelled, or returned.
+   * Creates an AUDIT-logged negative adjustment ledger entry.
+   */
+  static reverseOrderPoints(params: {
+    orderNumber: string
+    customerId: string
+    reason?: string
+    adminId?: string
+    adminName?: string
+  }): { reversed: boolean; pointsReversed: number; newBalance: number } {
+    const {
+      orderNumber,
+      customerId,
+      reason = 'Pesanan dibatalkan atau direfund',
+      adminId = 'system',
+      adminName = 'Sistem AMM',
+    } = params
+
+    // 1. Find original EARN ledger entry
+    const earnEntry = db.queryOne<{ id: string; points: number }>(
+      `SELECT id, points FROM membership_ledger WHERE reference_id = ? AND transaction_type = 'EARN'`,
+      [orderNumber]
+    )
+
+    if (!earnEntry || earnEntry.points <= 0) {
+      return {
+        reversed: false,
+        pointsReversed: 0,
+        newBalance: this.getCustomerBalance(customerId),
+      }
+    }
+
+    // 2. Check if already reversed for this order
+    const existingReversal = db.queryOne<{ id: string }>(
+      `SELECT id FROM membership_ledger WHERE reference_id = ? AND transaction_type = 'ADJUSTMENT' AND points < 0`,
+      [`reversal_${orderNumber}`]
+    )
+
+    if (existingReversal) {
+      return {
+        reversed: false,
+        pointsReversed: 0,
+        newBalance: this.getCustomerBalance(customerId),
+      }
+    }
+
+    return db.transaction(() => {
+      const currentBalance = this.getCustomerBalance(customerId)
+      const pointsToReverse = earnEntry.points
+      const newBalance = Math.max(0, currentBalance - pointsToReverse)
+      const nowStr = new Date().toISOString()
+      const ledgerId = `ledg_rev_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`
+
       db.run(
         `INSERT INTO membership_ledger (
           id, customer_id, points, transaction_type, reference_id, balance_after, reason, created_at
-        ) VALUES (?, ?, ?, 'EARN', ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, 'ADJUSTMENT', ?, ?, ?, ?)`,
         [
           ledgerId,
           customerId,
-          pointsToAward,
-          orderNumber,
+          -pointsToReverse,
+          `reversal_${orderNumber}`,
           newBalance,
-          `Poin loyalitas dari pesanan ${orderNumber} (Belanja produk Rp ${eligibleSpend.toLocaleString('id-ID')})`,
+          `Pembatalan poin pesanan ${orderNumber}: ${reason}`,
+          nowStr,
+        ]
+      )
+
+      // Audit log
+      db.run(
+        `INSERT INTO admin_audit_logs (id, admin_id, admin_name, action, resource_type, resource_id, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          `aud_${Date.now()}`,
+          adminId,
+          adminName,
+          'REVERSE_LOYALTY_POINTS',
+          'ORDER',
+          orderNumber,
+          JSON.stringify({ orderNumber, customerId, pointsReversed: pointsToReverse, reason, newBalance }),
           nowStr,
         ]
       )
 
       return {
-        awarded: true,
-        points: pointsToAward,
+        reversed: true,
+        pointsReversed: pointsToReverse,
         newBalance,
       }
     })

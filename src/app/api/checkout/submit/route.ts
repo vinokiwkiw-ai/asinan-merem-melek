@@ -136,6 +136,7 @@ export async function POST(req: NextRequest) {
     const pricing = PricingService.calculateTotal({
       items,
       voucherCode,
+      customerId,
       hasGiftPackaging: Boolean(hasGiftPackaging),
       hasGreetingCard: Boolean(hasGreetingCard),
       deliveryFee,
@@ -165,15 +166,16 @@ export async function POST(req: NextRequest) {
 
     // 7. Atomic Database Transaction
     db.transaction(() => {
-      // Create Order
+      // Create Order with voucher snapshot
       db.run(
         `INSERT INTO orders (
           id, order_number, idempotency_key, customer_id, customer_name, customer_phone,
           branch_id, delivery_type, delivery_address, delivery_instructions,
           courier_name, courier_status,
           subtotal, discount, gift_charge, delivery_fee, total,
-          order_status, payment_status, payment_expires_at, tracking_token
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          order_status, payment_status, payment_expires_at, tracking_token,
+          voucher_code, voucher_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           orderId,
           orderNumber,
@@ -196,6 +198,8 @@ export async function POST(req: NextRequest) {
           'pending',
           paymentExpires.toISOString(),
           trackingToken,
+          pricing.voucherCode || null,
+          pricing.voucherId || null,
         ]
       )
 
@@ -300,9 +304,27 @@ export async function POST(req: NextRequest) {
         ]
       )
 
-      // If voucher was used, increment usage count
-      if (pricing.voucherCode) {
-        db.run('UPDATE vouchers SET times_used = times_used + 1 WHERE code = ?', [pricing.voucherCode])
+      // If voucher was used, atomically increment usage count and insert voucher_usages record
+      if (pricing.voucherCode && pricing.voucherDiscount > 0) {
+        db.run('UPDATE vouchers SET times_used = times_used + 1, updated_at = ? WHERE code = ?', [
+          now.toISOString(),
+          pricing.voucherCode,
+        ])
+
+        db.run(
+          `INSERT INTO voucher_usages (
+            id, voucher_id, voucher_code, order_id, customer_id, discount_amount, used_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [
+            `vu_${crypto.randomUUID()}`,
+            pricing.voucherId || 'vouch_manual',
+            pricing.voucherCode,
+            orderId,
+            customerId,
+            pricing.voucherDiscount,
+            now.toISOString(),
+          ]
+        )
       }
     })
 

@@ -23,6 +23,7 @@ export interface PricingBreakdown {
   }[]
   voucherDiscount: number
   voucherCode?: string
+  voucherId?: string
   voucherError?: string
   hasGiftPackaging: boolean
   giftPackagingFee: number
@@ -40,6 +41,7 @@ export class PricingService {
   static calculateTotal(params: {
     items: PricingItemInput[]
     voucherCode?: string
+    customerId?: string
     hasGiftPackaging?: boolean
     hasGreetingCard?: boolean
     deliveryFee?: number
@@ -48,6 +50,7 @@ export class PricingService {
     const {
       items,
       voucherCode,
+      customerId,
       hasGiftPackaging = false,
       hasGreetingCard = false,
       deliveryFee = 0,
@@ -139,6 +142,7 @@ export class PricingService {
 
     // Voucher verification
     let voucherDiscount = 0
+    let voucherId: string | undefined
     let voucherError: string | undefined
 
     if (voucherCode && voucherCode.trim()) {
@@ -147,44 +151,61 @@ export class PricingService {
       const voucher = db.queryOne<{
         id: string
         code: string
+        name?: string
         discount_type: 'PERCENT' | 'FIXED'
         discount_value: number
         min_spend: number
         max_discount: number
         usage_limit: number
+        usage_limit_per_customer?: number
         times_used: number
         start_date: string
         end_date: string
         is_active: number
+        is_archived?: number
       }>('SELECT * FROM vouchers WHERE code = ?', [code])
 
-      if (!voucher) {
+      if (!voucher || voucher.is_archived === 1) {
         voucherError = `Kode voucher "${code}" tidak ditemukan.`
       } else if (!voucher.is_active) {
         voucherError = `Kode voucher "${code}" sudah tidak aktif.`
       } else if (voucher.times_used >= voucher.usage_limit) {
         voucherError = `Batas pemakaian voucher "${code}" sudah habis.`
-      } else if (voucher.start_date && nowStr < voucher.start_date) {
-        voucherError = `Voucher "${code}" belum dapat digunakan.`
-      } else if (voucher.end_date && nowStr > voucher.end_date) {
-        voucherError = `Voucher "${code}" sudah kedaluwarsa.`
-      } else if (subtotal < voucher.min_spend) {
-        voucherError = `Minimal pembelanjaan untuk voucher ini adalah Rp ${voucher.min_spend.toLocaleString('id-ID')}.`
-      } else {
-        // Valid voucher
-        if (voucher.discount_type === 'PERCENT') {
-          let calculated = Math.floor((subtotal * voucher.discount_value) / 100)
-          if (voucher.max_discount > 0 && calculated > voucher.max_discount) {
-            calculated = voucher.max_discount
-          }
-          voucherDiscount = calculated
-        } else {
-          voucherDiscount = voucher.discount_value
+      } else if (voucher.usage_limit_per_customer && customerId) {
+        const custUsages = db.queryOne<{ cnt: number }>(
+          'SELECT COUNT(*) as cnt FROM voucher_usages WHERE voucher_code = ? AND customer_id = ?',
+          [code, customerId]
+        )
+        if (custUsages && custUsages.cnt >= voucher.usage_limit_per_customer) {
+          voucherError = `Anda telah mencapai batas maksimal penggunaan voucher "${code}" (${voucher.usage_limit_per_customer}x per customer).`
         }
+      }
 
-        // Voucher cannot exceed subtotal
-        if (voucherDiscount > subtotal) {
-          voucherDiscount = subtotal
+      if (!voucherError && voucher) {
+        if (voucher.start_date && nowStr < voucher.start_date) {
+          voucherError = `Voucher "${code}" belum dapat digunakan.`
+        } else if (voucher.end_date && nowStr > voucher.end_date) {
+          voucherError = `Voucher "${code}" sudah kedaluwarsa.`
+        } else if (subtotal < voucher.min_spend) {
+          voucherError = `Minimal pembelanjaan untuk voucher ini adalah Rp ${voucher.min_spend.toLocaleString('id-ID')}.`
+        } else {
+          // Valid voucher
+          if (voucher.discount_type === 'PERCENT') {
+            let calculated = Math.floor((subtotal * voucher.discount_value) / 100)
+            if (voucher.max_discount > 0 && calculated > voucher.max_discount) {
+              calculated = voucher.max_discount
+            }
+            voucherDiscount = calculated
+          } else {
+            voucherDiscount = voucher.discount_value
+          }
+
+          // Voucher cannot exceed subtotal
+          if (voucherDiscount > subtotal) {
+            voucherDiscount = subtotal
+          }
+
+          voucherId = voucher.id
         }
       }
     }
@@ -200,6 +221,7 @@ export class PricingService {
       itemsDetail,
       voucherDiscount,
       voucherCode: voucherDiscount > 0 ? voucherCode?.toUpperCase() : undefined,
+      voucherId,
       voucherError,
       hasGiftPackaging,
       giftPackagingFee,

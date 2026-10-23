@@ -97,6 +97,7 @@ export async function GET(req: NextRequest) {
         courierStatus: order.courier_status,
         estimatedDeliveryTime: order.estimated_delivery_time,
         subtotal: order.subtotal,
+        voucherCode: order.voucher_code || null,
         discount: order.discount,
         giftCharge: order.gift_charge,
         deliveryFee: order.delivery_fee,
@@ -128,4 +129,29 @@ export async function GET(req: NextRequest) {
   } catch (error: any) {
     return NextResponse.json({ error: error.message || 'Gagal memuat riwayat transaksi.' }, { status: 500 })
   }
+}
+
+/**
+ * Permanent Order History Guard:
+ * Backend strictly blocks DELETE, PUT, and unauthorized manipulation of historical orders.
+ */
+export async function DELETE() {
+  return NextResponse.json(
+    { error: 'Akses ditolak. Seluruh riwayat transaksi pesanan bersifat permanen dan tidak dapat dihapus oleh customer.' },
+    { status: 405 }
+  )
+}
+
+export async function PUT() {
+  return NextResponse.json(
+    { error: 'Akses ditolak. Catatan riwayat pesanan bersifat permanen dan tidak dapat dimanipulasi.' },
+    { status: 405 }
+  )
+}
+
+export async function POST() {
+  return NextResponse.json(
+    { error: 'Gunakan endpoint resmi /api/checkout/submit untuk membuat pesanan baru.' },
+    { status: 405 }
+  )
 }

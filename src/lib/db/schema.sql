@@ -134,6 +134,8 @@ CREATE TABLE IF NOT EXISTS orders (
   delivery_issue_reported INTEGER NOT NULL DEFAULT 0,
   delivery_issue_notes TEXT,
   delivery_issue_reported_at TEXT,
+  voucher_code TEXT,
+  voucher_id TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -251,16 +253,38 @@ CREATE TABLE IF NOT EXISTS rewards (
 CREATE TABLE IF NOT EXISTS vouchers (
   id TEXT PRIMARY KEY,
   code TEXT UNIQUE NOT NULL,
+  name TEXT,
+  description TEXT,
   discount_type TEXT NOT NULL CHECK (discount_type IN ('PERCENT', 'FIXED')),
   discount_value INTEGER NOT NULL,
   min_spend INTEGER NOT NULL DEFAULT 0,
   max_discount INTEGER NOT NULL DEFAULT 0,
   usage_limit INTEGER NOT NULL DEFAULT 100,
+  usage_limit_per_customer INTEGER NOT NULL DEFAULT 1,
   times_used INTEGER NOT NULL DEFAULT 0,
   start_date TEXT,
   end_date TEXT,
-  is_active INTEGER NOT NULL DEFAULT 1
+  is_active INTEGER NOT NULL DEFAULT 1,
+  is_archived INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS voucher_usages (
+  id TEXT PRIMARY KEY,
+  voucher_id TEXT NOT NULL,
+  voucher_code TEXT NOT NULL,
+  order_id TEXT NOT NULL,
+  customer_id TEXT NOT NULL,
+  discount_amount INTEGER NOT NULL,
+  used_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (voucher_id) REFERENCES vouchers(id) ON DELETE CASCADE,
+  FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
+  FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_voucher_usages_code_cust ON voucher_usages(voucher_code, customer_id);
+CREATE INDEX IF NOT EXISTS idx_voucher_usages_order ON voucher_usages(order_id);
 
 CREATE TABLE IF NOT EXISTS reviews (
   id TEXT PRIMARY KEY,

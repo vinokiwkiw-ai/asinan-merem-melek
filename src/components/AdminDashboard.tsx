@@ -137,6 +137,32 @@ export const AdminDashboard: React.FC = () => {
     reason: '',
   })
 
+  // Voucher Management State
+  const [showVoucherModal, setShowVoucherModal] = useState<boolean>(false)
+  const [editingVoucher, setEditingVoucher] = useState<any | null>(null)
+  const [voucherForm, setVoucherForm] = useState({
+    code: '',
+    name: '',
+    description: '',
+    discount_type: 'PERCENT',
+    discount_value: 10,
+    min_spend: 0,
+    max_discount: 0,
+    usage_limit: 100,
+    usage_limit_per_customer: 1,
+    start_date: '',
+    end_date: '',
+    is_active: 1,
+  })
+  const [savingVoucher, setSavingVoucher] = useState<boolean>(false)
+  const [viewingVoucherUsages, setViewingVoucherUsages] = useState<any | null>(null)
+  const [voucherUsagesData, setVoucherUsagesData] = useState<{
+    totalUsages: number
+    totalDiscountGiven: number
+    usages: any[]
+  } | null>(null)
+  const [loadingVoucherUsages, setLoadingVoucherUsages] = useState<boolean>(false)
+
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type })
     setTimeout(() => setToast(null), 3500)
@@ -865,6 +891,168 @@ export const AdminDashboard: React.FC = () => {
       fetchReviews()
     } catch (err: any) {
       showToast(err.message, 'error')
+    }
+  }
+
+  // Voucher Action Handlers
+  const handleOpenCreateVoucher = () => {
+    setEditingVoucher(null)
+    setVoucherForm({
+      code: '',
+      name: '',
+      description: '',
+      discount_type: 'PERCENT',
+      discount_value: 10,
+      min_spend: 0,
+      max_discount: 0,
+      usage_limit: 100,
+      usage_limit_per_customer: 1,
+      start_date: '',
+      end_date: '',
+      is_active: 1,
+    })
+    setShowVoucherModal(true)
+  }
+
+  const handleOpenEditVoucher = (v: any) => {
+    setEditingVoucher(v)
+    setVoucherForm({
+      code: v.code || '',
+      name: v.name || '',
+      description: v.description || '',
+      discount_type: v.discount_type || 'PERCENT',
+      discount_value: v.discount_value || 0,
+      min_spend: v.min_spend || 0,
+      max_discount: v.max_discount || 0,
+      usage_limit: v.usage_limit || 100,
+      usage_limit_per_customer: v.usage_limit_per_customer || 1,
+      start_date: v.start_date ? v.start_date.substring(0, 10) : '',
+      end_date: v.end_date ? v.end_date.substring(0, 10) : '',
+      is_active: v.is_active ? 1 : 0,
+    })
+    setShowVoucherModal(true)
+  }
+
+  const handleSaveVoucher = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!voucherForm.code || voucherForm.code.trim().length < 3) {
+      showToast('Kode voucher minimal 3 karakter!', 'error')
+      return
+    }
+    if (voucherForm.discount_value <= 0) {
+      showToast('Nilai diskon harus lebih dari 0!', 'error')
+      return
+    }
+    if (voucherForm.discount_type === 'PERCENT' && voucherForm.discount_value > 100) {
+      showToast('Diskon persentase tidak boleh melebihi 100%!', 'error')
+      return
+    }
+
+    setSavingVoucher(true)
+    try {
+      if (editingVoucher) {
+        const res = await fetch('/api/admin/vouchers', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: editingVoucher.id,
+            name: voucherForm.name,
+            description: voucherForm.description,
+            discount_type: voucherForm.discount_type,
+            discount_value: Number(voucherForm.discount_value),
+            min_spend: Number(voucherForm.min_spend),
+            max_discount: Number(voucherForm.max_discount),
+            usage_limit: Number(voucherForm.usage_limit),
+            usage_limit_per_customer: Number(voucherForm.usage_limit_per_customer),
+            start_date: voucherForm.start_date || null,
+            end_date: voucherForm.end_date || null,
+          }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || 'Gagal memperbarui voucher')
+        showToast(data.message || 'Voucher berhasil diperbarui!')
+      } else {
+        const res = await fetch('/api/admin/vouchers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            code: voucherForm.code,
+            name: voucherForm.name,
+            description: voucherForm.description,
+            discount_type: voucherForm.discount_type,
+            discount_value: Number(voucherForm.discount_value),
+            min_spend: Number(voucherForm.min_spend),
+            max_discount: Number(voucherForm.max_discount),
+            usage_limit: Number(voucherForm.usage_limit),
+            usage_limit_per_customer: Number(voucherForm.usage_limit_per_customer),
+            start_date: voucherForm.start_date || null,
+            end_date: voucherForm.end_date || null,
+            is_active: voucherForm.is_active,
+          }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || 'Gagal membuat voucher')
+        showToast(data.message || 'Voucher baru berhasil dibuat!')
+      }
+      setShowVoucherModal(false)
+      fetchVouchers()
+    } catch (err: any) {
+      showToast(err.message, 'error')
+    } finally {
+      setSavingVoucher(false)
+    }
+  }
+
+  const handleToggleVoucherActive = async (voucher: any) => {
+    try {
+      const nextActive = voucher.is_active ? 0 : 1
+      const res = await fetch('/api/admin/vouchers', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: voucher.id,
+          is_active: nextActive,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      showToast(data.message || `Status voucher ${voucher.code} diperbarui!`)
+      fetchVouchers()
+    } catch (err: any) {
+      showToast(err.message, 'error')
+    }
+  }
+
+  const handleDeleteOrArchiveVoucher = async (voucher: any) => {
+    const confirmMsg = `Yakin ingin menghapus atau mengarsipkan voucher "${voucher.code}"?\n\nJika voucher sudah pernah digunakan oleh customer dalam pesanan, sistem akan otomatis mengarsipkannya (soft-delete) untuk menjaga integritas data keuangan.`
+    if (!window.confirm(confirmMsg)) return
+
+    try {
+      const res = await fetch(`/api/admin/vouchers?id=${voucher.id}`, {
+        method: 'DELETE',
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      showToast(data.message || 'Voucher berhasil diproses!')
+      fetchVouchers()
+    } catch (err: any) {
+      showToast(err.message, 'error')
+    }
+  }
+
+  const handleViewVoucherUsages = async (voucher: any) => {
+    setViewingVoucherUsages(voucher)
+    setLoadingVoucherUsages(true)
+    setVoucherUsagesData(null)
+    try {
+      const res = await fetch(`/api/admin/vouchers?voucherId=${voucher.id}`)
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      setVoucherUsagesData(data)
+    } catch (err: any) {
+      showToast(err.message, 'error')
+    } finally {
+      setLoadingVoucherUsages(false)
     }
   }
 
@@ -1920,43 +2108,238 @@ export const AdminDashboard: React.FC = () => {
         {/* MODULE 6: VOUCHERS */}
         {activeModule === 'vouchers' && (
           <div className="space-y-6">
-            <div>
-              <h1 className="text-2xl font-black text-[#183F2E]">Voucher & Kode Promo</h1>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Kelola kupon diskon persentase dan potongan harga nominal.
-              </p>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div>
+                <h1 className="text-2xl font-black text-[#183F2E]">Voucher & Kode Promo</h1>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Kelola kupon diskon persentase dan nominal, atur kuota pemakaian, batas per customer, dan pantau riwayat penggunaan.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={fetchVouchers}
+                  className="px-3.5 py-2 rounded-2xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold flex items-center gap-1.5 transition shadow-sm"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  Refresh
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenCreateVoucher}
+                  className="px-4 py-2 rounded-2xl bg-[#183F2E] hover:bg-[#122e22] text-[#8BC137] text-xs font-black flex items-center gap-1.5 transition shadow-sm"
+                >
+                  <Plus className="w-4 h-4" />
+                  Tambah Voucher
+                </button>
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {vouchers.map((v) => (
-                <div key={v.id} className="bg-white rounded-3xl p-5 border border-slate-100 shadow-sm space-y-3">
-                  <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                    <span className="font-mono font-black text-base text-[#183F2E]">{v.code}</span>
-                    <span
-                      className={`text-[10px] px-3 py-1 rounded-full font-extrabold ${
-                        v.is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-500'
+            {/* Voucher Overview KPI */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">
+                <span className="text-[11px] font-bold text-slate-400 block">Total Voucher</span>
+                <span className="text-xl font-black text-[#183F2E]">{vouchers.length}</span>
+              </div>
+              <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">
+                <span className="text-[11px] font-bold text-slate-400 block">Voucher Aktif</span>
+                <span className="text-xl font-black text-emerald-600">
+                  {vouchers.filter((v) => v.is_active && !v.is_archived).length}
+                </span>
+              </div>
+              <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">
+                <span className="text-[11px] font-bold text-slate-400 block">Total Terpakai</span>
+                <span className="text-xl font-black text-slate-800">
+                  {vouchers.reduce((sum, v) => sum + (v.times_used || 0), 0)}x
+                </span>
+              </div>
+              <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">
+                <span className="text-[11px] font-bold text-slate-400 block">Total Diskon Diberikan</span>
+                <span className="text-xl font-black text-[#183F2E]">
+                  Rp {vouchers.reduce((sum, v) => sum + (v.total_discount_given || 0), 0).toLocaleString('id-ID')}
+                </span>
+              </div>
+            </div>
+
+            {/* Voucher Cards Grid */}
+            {vouchers.length === 0 ? (
+              <div className="bg-white rounded-3xl p-12 border border-slate-100 shadow-sm text-center space-y-4">
+                <div className="w-14 h-14 rounded-2xl bg-emerald-50 text-[#183F2E] mx-auto flex items-center justify-center">
+                  <Tag className="w-7 h-7" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-slate-800 text-sm">Belum Ada Voucher Promo</h3>
+                  <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+                    Buat kode voucher pertama untuk menarik lebih banyak customer dan meningkatkan transaksi.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleOpenCreateVoucher}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-[#183F2E] hover:bg-[#122e22] text-[#8BC137] text-xs font-black transition"
+                >
+                  <Plus className="w-4 h-4" />
+                  Buat Voucher Baru
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {vouchers.map((v) => {
+                  const usagePercent = Math.min(100, Math.round(((v.times_used || 0) / (v.usage_limit || 1)) * 100))
+                  return (
+                    <div
+                      key={v.id}
+                      className={`bg-white rounded-3xl p-5 border shadow-sm space-y-4 flex flex-col justify-between transition ${
+                        v.is_archived
+                          ? 'border-amber-200/80 bg-amber-50/20 opacity-80'
+                          : v.is_active
+                          ? 'border-slate-100 hover:border-emerald-200'
+                          : 'border-slate-200/80 bg-slate-50/40 opacity-75'
                       }`}
                     >
-                      {v.is_active ? 'Aktif' : 'Non-aktif'}
-                    </span>
-                  </div>
-                  <div className="text-xs space-y-1">
-                    <p className="text-slate-800">
-                      Diskon:{' '}
-                      <strong>
-                        {v.discount_type === 'PERCENT'
-                          ? `${v.discount_value}% (Maks Rp ${v.max_discount.toLocaleString('id-ID')})`
-                          : `Rp ${v.discount_value.toLocaleString('id-ID')}`}
-                      </strong>
-                    </p>
-                    <p className="text-slate-500">Min. Belanja: Rp {v.min_spend.toLocaleString('id-ID')}</p>
-                    <p className="text-slate-500">
-                      Terpakai: {v.times_used} / {v.usage_limit} kali
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
+                      <div className="space-y-3">
+                        {/* Top Badges */}
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-50 border border-emerald-200 text-[#183F2E] font-mono font-black text-sm">
+                            <Tag className="w-3.5 h-3.5 text-[#8BC137]" />
+                            {v.code}
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            {v.is_archived === 1 ? (
+                              <span className="text-[10px] px-2.5 py-0.5 rounded-full font-extrabold bg-amber-100 text-amber-800 flex items-center gap-1">
+                                <Archive className="w-3 h-3" />
+                                Diarsipkan
+                              </span>
+                            ) : (
+                              <span
+                                className={`text-[10px] px-2.5 py-0.5 rounded-full font-extrabold ${
+                                  v.is_active
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : 'bg-slate-200 text-slate-600'
+                                }`}
+                              >
+                                {v.is_active ? 'Aktif' : 'Non-aktif'}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Name & Description */}
+                        <div>
+                          <h4 className="font-extrabold text-[#183F2E] text-sm leading-tight">
+                            {v.name || v.code}
+                          </h4>
+                          {v.description && (
+                            <p className="text-slate-500 text-[11px] mt-0.5 line-clamp-2">
+                              {v.description}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Details Box */}
+                        <div className="bg-slate-50 rounded-2xl p-3 space-y-2 text-xs">
+                          <div className="flex justify-between items-center text-slate-700">
+                            <span className="text-slate-500">Nilai Diskon:</span>
+                            <span className="font-extrabold text-[#183F2E]">
+                              {v.discount_type === 'PERCENT'
+                                ? `${v.discount_value}% ${v.max_discount ? `(Maks Rp ${v.max_discount.toLocaleString('id-ID')})` : ''}`
+                                : `Rp ${v.discount_value.toLocaleString('id-ID')}`}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center text-slate-700">
+                            <span className="text-slate-500">Min. Belanja:</span>
+                            <span className="font-medium text-slate-800">
+                              Rp {(v.min_spend || 0).toLocaleString('id-ID')}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center text-slate-700">
+                            <span className="text-slate-500">Batas per Customer:</span>
+                            <span className="font-medium text-slate-800">
+                              {v.usage_limit_per_customer || 1}x transaksi
+                            </span>
+                          </div>
+
+                          {/* Quota Progress */}
+                          <div className="space-y-1 pt-1">
+                            <div className="flex justify-between items-center text-[11px]">
+                              <span className="text-slate-500">Kuota Terpakai:</span>
+                              <span className="font-bold text-slate-700">
+                                {v.times_used || 0} / {v.usage_limit} ({usagePercent}%)
+                              </span>
+                            </div>
+                            <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                              <div
+                                className="bg-[#8BC137] h-full rounded-full transition-all"
+                                style={{ width: `${usagePercent}%` }}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Validity Period */}
+                          <div className="text-[11px] text-slate-500 pt-1 border-t border-slate-200/60 flex items-center justify-between">
+                            <span>Masa Berlaku:</span>
+                            <span className="font-medium text-slate-700">
+                              {v.start_date || v.end_date
+                                ? `${v.start_date ? v.start_date.substring(0, 10) : 'Sekarang'} s/d ${
+                                    v.end_date ? v.end_date.substring(0, 10) : 'Seterusnya'
+                                  }`
+                                : 'Tanpa batas waktu'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Card Action Buttons */}
+                      <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleViewVoucherUsages(v)}
+                          className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold flex items-center gap-1 transition"
+                          title="Lihat riwayat penggunaan voucher ini"
+                        >
+                          <Eye className="w-3.5 h-3.5 text-slate-500" />
+                          Riwayat ({v.times_used || 0})
+                        </button>
+
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditVoucher(v)}
+                            className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-600 hover:text-slate-900 transition"
+                            title="Edit ketentuan voucher"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleToggleVoucherActive(v)}
+                            className={`px-2 py-1 rounded-xl text-[11px] font-bold transition ${
+                              v.is_active
+                                ? 'bg-amber-50 hover:bg-amber-100 text-amber-700'
+                                : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700'
+                            }`}
+                            title={v.is_active ? 'Nonaktifkan voucher' : 'Aktifkan voucher'}
+                          >
+                            {v.is_active ? 'Nonaktifkan' : 'Aktifkan'}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteOrArchiveVoucher(v)}
+                            className="p-1.5 rounded-xl hover:bg-rose-50 text-rose-500 hover:text-rose-700 transition"
+                            title="Hapus atau arsipkan voucher"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -4067,6 +4450,323 @@ export const AdminDashboard: React.FC = () => {
                   Simpan Jadwal Libur
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* VOUCHER FORM MODAL (Add/Edit) */}
+      {showVoucherModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150 overflow-y-auto">
+          <div className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden my-8">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-emerald-100 text-[#183F2E] flex items-center justify-center">
+                  <Tag className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-[#183F2E]">
+                    {editingVoucher ? `Edit Voucher Promo: ${editingVoucher.code}` : 'Tambah Voucher Promo Baru'}
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    {editingVoucher ? 'Perbarui syarat, kuota, atau besaran diskon' : 'Buat kode kupon diskon baru'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowVoucherModal(false)}
+                className="w-7 h-7 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-600 flex items-center justify-center transition"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveVoucher} className="p-5 space-y-4 text-xs max-h-[80vh] overflow-y-auto">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-slate-700 font-bold block mb-1">Kode Voucher *</label>
+                  <input
+                    type="text"
+                    required
+                    disabled={!!editingVoucher}
+                    value={voucherForm.code}
+                    onChange={(e) => setVoucherForm({ ...voucherForm, code: e.target.value.toUpperCase() })}
+                    placeholder="Contoh: MEREM10"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 font-mono font-bold uppercase outline-none focus:ring-2 focus:ring-[#8BC137]/30 disabled:opacity-60"
+                  />
+                  {editingVoucher && (
+                    <span className="text-[10px] text-slate-400 mt-0.5 block">Kode voucher tidak dapat diubah setelah dibuat.</span>
+                  )}
+                </div>
+
+                <div>
+                  <label className="text-slate-700 font-bold block mb-1">Nama Voucher / Kampanye</label>
+                  <input
+                    type="text"
+                    value={voucherForm.name}
+                    onChange={(e) => setVoucherForm({ ...voucherForm, name: e.target.value })}
+                    placeholder="Contoh: Promo Gajian Merem Melek"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 outline-none focus:ring-2 focus:ring-[#8BC137]/30"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-slate-700 font-bold block mb-1">Deskripsi Voucher</label>
+                <textarea
+                  rows={2}
+                  value={voucherForm.description}
+                  onChange={(e) => setVoucherForm({ ...voucherForm, description: e.target.value })}
+                  placeholder="Contoh: Potongan 10% untuk semua menu dengan minimal transaksi Rp 50.000"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 outline-none focus:ring-2 focus:ring-[#8BC137]/30"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-slate-700 font-bold block mb-1">Tipe Diskon *</label>
+                  <select
+                    value={voucherForm.discount_type}
+                    onChange={(e) => setVoucherForm({ ...voucherForm, discount_type: e.target.value as 'PERCENT' | 'FIXED' })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 font-bold outline-none focus:ring-2 focus:ring-[#8BC137]/30"
+                  >
+                    <option value="PERCENT">Persentase (%)</option>
+                    <option value="FIXED">Nominal Tetap (Rp)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-slate-700 font-bold block mb-1">
+                    Nilai Diskon ({voucherForm.discount_type === 'PERCENT' ? '%' : 'Rp'}) *
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max={voucherForm.discount_type === 'PERCENT' ? '100' : undefined}
+                    required
+                    value={voucherForm.discount_value}
+                    onChange={(e) => setVoucherForm({ ...voucherForm, discount_value: Number(e.target.value) })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 font-bold outline-none focus:ring-2 focus:ring-[#8BC137]/30"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-slate-700 font-bold block mb-1">Minimal Belanja (Rp)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1000"
+                    value={voucherForm.min_spend}
+                    onChange={(e) => setVoucherForm({ ...voucherForm, min_spend: Number(e.target.value) })}
+                    placeholder="0 = Tanpa minimal"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 outline-none focus:ring-2 focus:ring-[#8BC137]/30"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-slate-700 font-bold block mb-1">
+                    Maks. Potongan Diskon (Rp)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1000"
+                    disabled={voucherForm.discount_type === 'FIXED'}
+                    value={voucherForm.max_discount}
+                    onChange={(e) => setVoucherForm({ ...voucherForm, max_discount: Number(e.target.value) })}
+                    placeholder={voucherForm.discount_type === 'FIXED' ? 'Otomatis' : '0 = Tanpa batas maks'}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 outline-none focus:ring-2 focus:ring-[#8BC137]/30 disabled:opacity-50"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-slate-700 font-bold block mb-1">Total Kuota Penggunaan *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    value={voucherForm.usage_limit}
+                    onChange={(e) => setVoucherForm({ ...voucherForm, usage_limit: Number(e.target.value) })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 outline-none focus:ring-2 focus:ring-[#8BC137]/30"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-slate-700 font-bold block mb-1">Batas per Akun Customer *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    value={voucherForm.usage_limit_per_customer}
+                    onChange={(e) => setVoucherForm({ ...voucherForm, usage_limit_per_customer: Number(e.target.value) })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 outline-none focus:ring-2 focus:ring-[#8BC137]/30"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-slate-700 font-bold block mb-1">Tanggal Mulai Berlaku</label>
+                  <input
+                    type="date"
+                    value={voucherForm.start_date}
+                    onChange={(e) => setVoucherForm({ ...voucherForm, start_date: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 outline-none font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-slate-700 font-bold block mb-1">Tanggal Berakhir</label>
+                  <input
+                    type="date"
+                    value={voucherForm.end_date}
+                    onChange={(e) => setVoucherForm({ ...voucherForm, end_date: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 outline-none font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowVoucherModal(false)}
+                  className="px-4 py-2.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold transition"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingVoucher}
+                  className="px-6 py-2.5 rounded-full bg-[#183F2E] hover:bg-[#122e22] text-[#8BC137] font-black transition shadow-sm disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  {savingVoucher ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      Menyimpan...
+                    </>
+                  ) : (
+                    'Simpan Voucher'
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* VOUCHER USAGE HISTORY MODAL */}
+      {viewingVoucherUsages && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="relative w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden max-h-[85vh] flex flex-col">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-100 text-[#183F2E] flex items-center justify-center">
+                  <Tag className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-black text-[#183F2E]">
+                      Riwayat Penggunaan Voucher
+                    </h3>
+                    <span className="font-mono font-black text-xs px-2.5 py-0.5 rounded-lg bg-emerald-100 text-[#183F2E]">
+                      {viewingVoucherUsages.code}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    {viewingVoucherUsages.name || viewingVoucherUsages.code}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewingVoucherUsages(null)}
+                className="w-7 h-7 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-600 flex items-center justify-center transition"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* Quick Summary Cards */}
+            <div className="grid grid-cols-2 gap-3 p-4 bg-slate-50/50 border-b border-slate-100 text-xs">
+              <div className="bg-white rounded-2xl p-3 border border-slate-100">
+                <span className="text-slate-400 font-bold block text-[11px]">Total Pemakaian</span>
+                <span className="text-lg font-black text-[#183F2E]">
+                  {voucherUsagesData?.totalUsages ?? (loadingVoucherUsages ? '...' : 0)} kali
+                </span>
+              </div>
+              <div className="bg-white rounded-2xl p-3 border border-slate-100">
+                <span className="text-slate-400 font-bold block text-[11px]">Total Diskon Diberikan</span>
+                <span className="text-lg font-black text-emerald-600">
+                  Rp {(voucherUsagesData?.totalDiscountGiven ?? 0).toLocaleString('id-ID')}
+                </span>
+              </div>
+            </div>
+
+            {/* Usages Content */}
+            <div className="p-4 flex-1 overflow-y-auto">
+              {loadingVoucherUsages ? (
+                <div className="py-12 text-center text-slate-400 text-xs flex flex-col items-center gap-2">
+                  <RefreshCw className="w-6 h-6 animate-spin text-[#8BC137]" />
+                  <span>Memuat data penggunaan voucher...</span>
+                </div>
+              ) : !voucherUsagesData?.usages || voucherUsagesData.usages.length === 0 ? (
+                <div className="py-12 text-center text-slate-400 text-xs space-y-1">
+                  <p className="font-bold text-slate-600">Belum Ada Riwayat Pemakaian</p>
+                  <p>Voucher ini belum pernah digunakan oleh customer dalam pesanan yang tersimpan.</p>
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {voucherUsagesData.usages.map((u: any, idx: number) => (
+                    <div
+                      key={u.id || idx}
+                      className="p-3.5 rounded-2xl border border-slate-100 hover:border-slate-200 bg-white flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono font-bold text-slate-800">
+                            {u.order_number || 'N/A'}
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            {u.used_at ? new Date(u.used_at).toLocaleString('id-ID') : '-'}
+                          </span>
+                        </div>
+                        <p className="text-slate-600">
+                          Customer: <strong>{u.customer_name || 'Pelanggan'}</strong> ({u.customer_phone || '-'})
+                        </p>
+                      </div>
+
+                      <div className="flex items-center sm:flex-col sm:items-end justify-between border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-100">
+                        <div className="text-right">
+                          <span className="text-[11px] text-slate-400 block">Potongan Diskon:</span>
+                          <span className="font-extrabold text-emerald-600">
+                            -Rp {(u.discount_amount || 0).toLocaleString('id-ID')}
+                          </span>
+                        </div>
+                        {u.order_total && (
+                          <span className="text-[10px] text-slate-400">
+                            Total Belanja: Rp {Number(u.order_total).toLocaleString('id-ID')}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setViewingVoucherUsages(null)}
+                className="px-5 py-2 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold transition"
+              >
+                Tutup
+              </button>
             </div>
           </div>
         </div>

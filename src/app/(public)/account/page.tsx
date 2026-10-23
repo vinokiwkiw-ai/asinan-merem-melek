@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { useAppStore } from '@/store/useStore'
 import {
   User,
   Star,
@@ -16,13 +17,19 @@ import {
   Sparkles,
   ArrowRight,
   RefreshCw,
+  Eye,
+  Repeat,
+  X,
+  ShieldCheck,
 } from 'lucide-react'
 import { MangoMascot } from '@/components/mascot/MangoMascot'
 
 export default function AccountPage() {
   const router = useRouter()
+  const { addToCart } = useAppStore() || {}
   const [customer, setCustomer] = useState<any>(null)
   const [activeTab, setActiveTab] = useState<'points' | 'orders' | 'addresses'>('points')
+  const [selectedOrderDetail, setSelectedOrderDetail] = useState<any>(null)
 
   // Membership & Rewards state
   const [membership, setMembership] = useState<any>(null)
@@ -212,6 +219,29 @@ export default function AccountPage() {
     } catch (err) {
       console.error(err)
     }
+  }
+
+  const handleReorder = (order: any) => {
+    if (!addToCart) return
+    if (!order.items || order.items.length === 0) {
+      router.push('/menu')
+      return
+    }
+
+    order.items.forEach((it: any) => {
+      const mockMenuItem = {
+        id: it.product_id || it.productId || 'gl-rujak-personal',
+        name: it.product_name || it.productName || 'Rujak/Asinan Buah',
+        description: '',
+        base_price: it.unit_price || it.unitPrice || 0,
+        category_id: 'rujak-buah',
+        image_url: '',
+        is_available: true,
+      }
+      addToCart(mockMenuItem, undefined, it.qty || 1, it.custom_fruit_notes || '', it.seasonings || [])
+    })
+
+    router.push('/cart')
   }
 
   const handleLogout = async () => {
@@ -581,15 +611,35 @@ export default function AccountPage() {
                     )}
                   </div>
 
-                  {/* Tracking Button */}
-                  <button
-                    type="button"
-                    onClick={() => router.push(o.trackingUrl || `/track/${o.orderNumber || o.order_number}?token=${o.trackingToken || o.tracking_token}`)}
-                    className="px-5 py-2.5 rounded-full bg-[#8BC137] text-[#183F2E] font-black text-xs hover:bg-[#7ab02d] transition inline-flex items-center gap-1.5 shadow-sm cursor-pointer"
-                  >
-                    <span>Lacak Pesanan</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
+                  {/* Action Buttons: Lihat Detail, Lacak Pesanan, Pesan Lagi */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedOrderDetail(o)}
+                      className="px-4 py-2 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition inline-flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Eye className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Lihat Detail</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => router.push(o.trackingUrl || `/track/${o.orderNumber || o.order_number}?token=${o.trackingToken || o.tracking_token}`)}
+                      className="px-4 py-2 rounded-full bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-xs transition inline-flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <ArrowRight className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Lacak</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleReorder(o)}
+                      className="px-4 py-2 rounded-full bg-[#8BC137] hover:bg-[#7ab02d] text-[#183F2E] font-black text-xs transition inline-flex items-center gap-1.5 shadow-sm cursor-pointer"
+                    >
+                      <Repeat className="w-3.5 h-3.5" />
+                      <span>Pesan Lagi</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             ))
@@ -717,6 +767,209 @@ export default function AccountPage() {
               </button>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* MODAL: DETAIL PESANAN LENGKAP */}
+      {selectedOrderDetail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="relative w-full max-w-xl bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden max-h-[90vh] flex flex-col text-xs">
+            {/* Modal Header */}
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-[#8BC137]/20 flex items-center justify-center text-[#183F2E] font-bold">
+                  📦
+                </div>
+                <div>
+                  <h3 className="font-mono font-black text-sm text-[#183F2E]">
+                    #{selectedOrderDetail.orderNumber || selectedOrderDetail.order_number}
+                  </h3>
+                  <span className="text-[10px] text-slate-400">
+                    {selectedOrderDetail.createdAt || selectedOrderDetail.created_at}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span
+                  className={`px-3 py-1 rounded-full text-[10px] font-bold ${
+                    (selectedOrderDetail.orderStatus || selectedOrderDetail.order_status) === 'selesai'
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : (selectedOrderDetail.orderStatus || selectedOrderDetail.order_status) === 'diproses'
+                      ? 'bg-amber-100 text-amber-800'
+                      : (selectedOrderDetail.orderStatus || selectedOrderDetail.order_status) === 'dikirim'
+                      ? 'bg-sky-100 text-sky-800'
+                      : 'bg-slate-100 text-slate-700'
+                  }`}
+                >
+                  {(selectedOrderDetail.orderStatus || selectedOrderDetail.order_status) === 'selesai'
+                    ? '✓ Selesai Diterima'
+                    : (selectedOrderDetail.orderStatus || selectedOrderDetail.order_status) === 'diproses'
+                    ? '🍳 Sedang Disiapkan'
+                    : (selectedOrderDetail.orderStatus || selectedOrderDetail.order_status) === 'dikirim'
+                    ? '🛵 Dalam Pengiriman'
+                    : selectedOrderDetail.orderStatus || selectedOrderDetail.order_status}
+                </span>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedOrderDetail(null)}
+                  className="w-7 h-7 rounded-full bg-slate-200/80 hover:bg-slate-300 text-slate-700 flex items-center justify-center transition"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+              {/* Delivery & Recipient Snapshot */}
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-1">
+                <span className="text-[10px] font-extrabold text-[#183F2E] uppercase tracking-wider block">
+                  Informasi Pengiriman
+                </span>
+                <p className="font-bold text-slate-800">
+                  {selectedOrderDetail.customerName || selectedOrderDetail.customer_name} ({selectedOrderDetail.customerPhone || selectedOrderDetail.customer_phone})
+                </p>
+                <p className="text-slate-600">{selectedOrderDetail.deliveryAddress || selectedOrderDetail.delivery_address || 'Alamat tidak tercatat'}</p>
+                {selectedOrderDetail.deliveryInstructions && (
+                  <p className="text-[10px] text-amber-800 italic pt-1">
+                    Instruksi: &ldquo;{selectedOrderDetail.deliveryInstructions}&rdquo;
+                  </p>
+                )}
+                {selectedOrderDetail.courierName && (
+                  <p className="text-[10px] text-slate-500 pt-1">
+                    Kurir: <strong>{selectedOrderDetail.courierName}</strong>
+                    {selectedOrderDetail.courierTrackingNumber && ` (No Resi: ${selectedOrderDetail.courierTrackingNumber})`}
+                  </p>
+                )}
+              </div>
+
+              {/* Items List */}
+              <div className="space-y-2">
+                <span className="text-[10px] font-extrabold text-[#183F2E] uppercase tracking-wider block">
+                  Daftar Menu yang Dipesan
+                </span>
+                {(selectedOrderDetail.items || []).map((it: any) => (
+                  <div key={it.id} className="p-3 rounded-2xl bg-slate-50 border border-slate-100 space-y-1">
+                    <div className="flex items-center justify-between font-bold text-slate-800">
+                      <span>
+                        {it.qty}x {it.product_name || it.productName} ({it.size || 'STANDARD'})
+                      </span>
+                      <span className="font-mono text-[#183F2E]">
+                        Rp {(it.subtotal || it.unit_price * it.qty || 0).toLocaleString('id-ID')}
+                      </span>
+                    </div>
+
+                    {it.seasonings && it.seasonings.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                        <span className="text-[10px] text-slate-400 font-semibold">Bumbu:</span>
+                        {it.seasonings.map((s: any, idx: number) => (
+                          <span
+                            key={idx}
+                            className="text-[10px] px-2 py-0.5 rounded-full bg-white border border-slate-200 text-[#183F2E] font-medium"
+                          >
+                            {s.qty}x {s.seasoning_name || s.seasoningName}
+                            {s.extra_price > 0 && ` (+Rp ${s.extra_price.toLocaleString('id-ID')})`}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {it.custom_fruit_notes && (
+                      <p className="text-[10px] text-amber-800 italic pt-0.5">
+                        Catatan: &ldquo;{it.custom_fruit_notes}&rdquo;
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* Financial Breakdown */}
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-1.5">
+                <span className="text-[10px] font-extrabold text-[#183F2E] uppercase tracking-wider block mb-1">
+                  Rincian Pembayaran
+                </span>
+                <div className="flex justify-between text-slate-600">
+                  <span>Subtotal Produk</span>
+                  <span className="font-mono">Rp {(selectedOrderDetail.subtotal || 0).toLocaleString('id-ID')}</span>
+                </div>
+                {selectedOrderDetail.discount > 0 && (
+                  <div className="flex justify-between text-rose-600 font-semibold">
+                    <span>
+                      Diskon Voucher {selectedOrderDetail.voucherCode ? `(${selectedOrderDetail.voucherCode})` : ''}
+                    </span>
+                    <span className="font-mono">-Rp {selectedOrderDetail.discount.toLocaleString('id-ID')}</span>
+                  </div>
+                )}
+                {selectedOrderDetail.deliveryFee > 0 && (
+                  <div className="flex justify-between text-slate-600">
+                    <span>Ongkos Kirim Kurir</span>
+                    <span className="font-mono">Rp {selectedOrderDetail.deliveryFee.toLocaleString('id-ID')}</span>
+                  </div>
+                )}
+                {selectedOrderDetail.giftCharge > 0 && (
+                  <div className="flex justify-between text-slate-600">
+                    <span>Biaya Packaging & Kartu Ucapan</span>
+                    <span className="font-mono">Rp {selectedOrderDetail.giftCharge.toLocaleString('id-ID')}</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-sm font-black text-[#183F2E] pt-2 border-t border-slate-200">
+                  <span>Total Tagihan</span>
+                  <span className="font-mono">Rp {(selectedOrderDetail.total || 0).toLocaleString('id-ID')}</span>
+                </div>
+              </div>
+
+              {/* Loyalty points info */}
+              {selectedOrderDetail.pointsEarned > 0 && (
+                <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-between text-emerald-800 font-bold">
+                  <span className="flex items-center gap-1.5">
+                    <Sparkles className="w-4 h-4 text-amber-500" />
+                    Poin Loyalitas yang Diperoleh
+                  </span>
+                  <span className="font-mono text-sm">+{selectedOrderDetail.pointsEarned} pts</span>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-slate-100 flex items-center justify-between bg-slate-50 gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedOrderDetail(null)}
+                className="px-4 py-2 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold transition"
+              >
+                Tutup
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const url = selectedOrderDetail.trackingUrl || `/track/${selectedOrderDetail.orderNumber}?token=${selectedOrderDetail.trackingToken}`
+                    setSelectedOrderDetail(null)
+                    router.push(url)
+                  }}
+                  className="px-4 py-2 rounded-full bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-bold transition flex items-center gap-1"
+                >
+                  <ArrowRight className="w-3.5 h-3.5" />
+                  <span>Lacak Pesanan</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleReorder(selectedOrderDetail)
+                    setSelectedOrderDetail(null)
+                  }}
+                  className="px-5 py-2 rounded-full bg-[#8BC137] hover:bg-[#7ab02d] text-[#183F2E] font-black transition flex items-center gap-1 shadow-sm"
+                >
+                  <Repeat className="w-3.5 h-3.5" />
+                  <span>Pesan Lagi</span>
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
