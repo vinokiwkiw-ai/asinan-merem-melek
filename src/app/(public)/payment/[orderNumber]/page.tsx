@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useParams, useSearchParams, useRouter } from 'next/navigation'
 import {
   Copy,
@@ -40,19 +40,30 @@ export default function PaymentPage() {
   const [uploadSuccess, setUploadSuccess] = useState<boolean>(false)
 
   // Fetch payment data
+  const retryCountRef = useRef<number>(0)
   const fetchStatus = async () => {
     try {
       const res = await fetch(`/api/orders/${orderNumber}/payment?token=${token}`)
-      if (!res.ok) throw new Error('Gagal memuat status pembayaran.')
+      if (!res.ok) {
+        if (res.status === 404 && retryCountRef.current < 4) {
+          retryCountRef.current += 1
+          return // Keep showing loader while serverless container warms up
+        }
+        throw new Error('Gagal memuat status pembayaran.')
+      }
       const data = await res.json()
-      setOrderData(data.order)
-      setPaymentData(data.payment)
-      setRemainingSeconds(data.remainingSeconds)
-      setIsExpired(data.isExpired)
+      if (data.order) {
+        setOrderData(data.order)
+        setPaymentData(data.payment)
+        setRemainingSeconds(data.remainingSeconds)
+        setIsExpired(data.isExpired)
+      }
       setLoading(false)
     } catch (err: any) {
       console.error(err)
-      setLoading(false)
+      if (retryCountRef.current >= 4) {
+        setLoading(false)
+      }
     }
   }
 

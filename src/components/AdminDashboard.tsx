@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   LayoutDashboard,
@@ -82,6 +82,8 @@ export const AdminDashboard: React.FC = () => {
 
   // New order & product filters
   const [orderFilter, setOrderFilter] = useState<string>('all')
+  const orderFilterRef = useRef<string>('all')
+  orderFilterRef.current = orderFilter
   const [productFilter, setProductFilter] = useState<string>('ALL')
   const [productSearch, setProductSearch] = useState<string>('')
 
@@ -202,11 +204,18 @@ export const AdminDashboard: React.FC = () => {
   // Fetch orders & reports
   const fetchOrders = async (statusFilter?: string) => {
     try {
-      const activeFilter = statusFilter !== undefined ? statusFilter : orderFilter
+      const activeFilter = statusFilter !== undefined ? statusFilter : orderFilterRef.current
       const q = activeFilter && activeFilter !== 'all' ? `?status=${activeFilter}` : ''
       const res = await fetch(`/api/admin/orders${q}`)
       const data = await res.json()
-      if (data.orders) setOrders(data.orders)
+      if (Array.isArray(data.orders)) {
+        setOrders((prev) => {
+          if (prev.length === data.orders.length && JSON.stringify(prev) === JSON.stringify(data.orders)) {
+            return prev
+          }
+          return data.orders
+        })
+      }
     } catch (err) {
       console.error(err)
     } finally {
@@ -218,7 +227,14 @@ export const AdminDashboard: React.FC = () => {
     try {
       const res = await fetch('/api/admin/reports/summary')
       const data = await res.json()
-      setReportSummary(data)
+      if (data && !data.error) {
+        setReportSummary((prev: any) => {
+          if (prev && JSON.stringify(prev) === JSON.stringify(data)) {
+            return prev
+          }
+          return data
+        })
+      }
     } catch (err) {
       console.error(err)
     }
@@ -304,9 +320,9 @@ export const AdminDashboard: React.FC = () => {
     fetchReviews()
     fetchTickets()
 
-    // Poll every 8s
+    // Poll every 8s preserving active filter
     const timer = setInterval(() => {
-      fetchOrders()
+      fetchOrders(orderFilterRef.current)
       fetchReports()
     }, 8000)
     return () => clearInterval(timer)

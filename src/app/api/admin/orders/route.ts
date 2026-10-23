@@ -111,12 +111,13 @@ export async function PATCH(req: NextRequest) {
       order_number: string
       order_status: string
       customer_id: string
+      customer_phone: string
       subtotal: number
       discount: number
       total: number
     }>(
-      'SELECT id, order_number, order_status, customer_id, subtotal, discount, total FROM orders WHERE id = ?',
-      [orderId]
+      'SELECT id, order_number, order_status, customer_id, customer_phone, subtotal, discount, total FROM orders WHERE id = ? OR order_number = ?',
+      [orderId, orderId]
     )
 
     if (!order) {
@@ -152,7 +153,7 @@ export async function PATCH(req: NextRequest) {
           courierStatus || null,
           estimatedDeliveryTime || null,
           nowStr,
-          orderId,
+          order.id,
         ]
       )
 
@@ -190,11 +191,13 @@ export async function PATCH(req: NextRequest) {
       }
     })
 
+    const targetCustomerId = order.customer_id || (order.customer_phone ? `cust_${String(order.customer_phone).replace(/\D/g, '')}` : null) || `cust_${order.order_number}`
+
     // Automatic Loyalty Points: Award on completion ('selesai')
     if (targetStatus === 'selesai' && order.order_status !== 'selesai') {
       MembershipService.awardOrderPoints({
         orderNumber: order.order_number,
-        customerId: order.customer_id || `cust_${order.order_number}`,
+        customerId: targetCustomerId,
         subtotal: order.subtotal,
         discount: order.discount || 0,
       })
@@ -204,7 +207,7 @@ export async function PATCH(req: NextRequest) {
     if (order.order_status === 'selesai' && (targetStatus === 'dibatalkan' || targetStatus === 'refund')) {
       MembershipService.reverseOrderPoints({
         orderNumber: order.order_number,
-        customerId: order.customer_id || `cust_${order.order_number}`,
+        customerId: targetCustomerId,
         reason: reasonText || 'Pembatalan pesanan oleh admin',
         adminId,
         adminName,

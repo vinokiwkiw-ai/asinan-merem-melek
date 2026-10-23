@@ -5,7 +5,12 @@ const nextConfig = {
   },
   typescript: {
     ignoreBuildErrors: true,
-  }
+  },
+  experimental: {
+    outputFileTracingIncludes: {
+      '/api/**/*': ['./data/**/*', './src/lib/db/schema.sql'],
+    },
+  },
 };
 
 export default nextConfig;

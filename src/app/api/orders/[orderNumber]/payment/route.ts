@@ -24,7 +24,7 @@ export async function GET(req: NextRequest, { params }: { params: { orderNumber:
       payment_expires_at: string
       tracking_token: string
       created_at: string
-    }>('SELECT * FROM orders WHERE order_number = ?', [orderNumber])
+    }>('SELECT * FROM orders WHERE order_number = ? OR id = ?', [orderNumber, orderNumber])
 
     if (!order) {
       return NextResponse.json({ error: 'Pesanan tidak ditemukan.' }, { status: 404 })

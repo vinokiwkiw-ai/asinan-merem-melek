@@ -36,14 +36,15 @@ export async function POST(req: NextRequest) {
       order_status: string
       payment_status: string
       customer_id: string
-    }>('SELECT * FROM orders WHERE id = ?', [orderId])
+    }>('SELECT * FROM orders WHERE id = ? OR order_number = ?', [orderId, orderId])
 
     if (!order) {
       return NextResponse.json({ error: 'Pesanan tidak ditemukan.' }, { status: 404 })
     }
 
-    const payment = db.queryOne<{ id: string; status: string }>('SELECT * FROM payments WHERE order_id = ?', [
-      orderId,
+    const payment = db.queryOne<{ id: string; status: string }>('SELECT * FROM payments WHERE order_id = ? OR order_id = ?', [
+      order.id,
+      order.order_number,
     ])
 
     if (!payment) {
@@ -65,8 +66,8 @@ export async function POST(req: NextRequest) {
             verified_at = ?,
             verified_by = ?,
             rejection_reason = NULL
-          WHERE order_id = ?`,
-          [nowStr, adminName, orderId]
+          WHERE order_id = ? OR order_id = ?`,
+          [nowStr, adminName, order.id, order.order_number]
         )
 
         db.run(
@@ -75,7 +76,7 @@ export async function POST(req: NextRequest) {
             order_status = 'diproses',
             updated_at = ?
           WHERE id = ?`,
-          [nowStr, orderId]
+          [nowStr, order.id]
         )
 
         // Event Log
@@ -83,7 +84,7 @@ export async function POST(req: NextRequest) {
           `INSERT INTO order_status_events (id, order_id, from_status, to_status, actor_type, actor_id, notes) VALUES (?, ?, ?, ?, ?, ?, ?)`,
           [
             `evt_${Date.now()}`,
-            orderId,
+            order.id,
             order.order_status,
             'diproses',
             'ADMIN',
@@ -101,7 +102,7 @@ export async function POST(req: NextRequest) {
             adminName,
             'APPROVE_PAYMENT',
             'ORDER',
-            orderId,
+            order.id,
             JSON.stringify({ orderNumber: order.order_number, total: order.total }),
           ]
         )
@@ -113,8 +114,8 @@ export async function POST(req: NextRequest) {
             verified_at = ?,
             verified_by = ?,
             rejection_reason = ?
-          WHERE order_id = ?`,
-          [nowStr, adminName, rejectionReason.trim(), orderId]
+          WHERE order_id = ? OR order_id = ?`,
+          [nowStr, adminName, rejectionReason.trim(), order.id, order.order_number]
         )
 
         db.run(
@@ -122,7 +123,7 @@ export async function POST(req: NextRequest) {
             payment_status = 'failed',
             updated_at = ?
           WHERE id = ?`,
-          [nowStr, orderId]
+          [nowStr, order.id]
         )
 
         // Event Log
@@ -130,7 +131,7 @@ export async function POST(req: NextRequest) {
           `INSERT INTO order_status_events (id, order_id, from_status, to_status, actor_type, actor_id, notes) VALUES (?, ?, ?, ?, ?, ?, ?)`,
           [
             `evt_${Date.now()}`,
-            orderId,
+            order.id,
             order.order_status,
             order.order_status,
             'ADMIN',
@@ -148,7 +149,7 @@ export async function POST(req: NextRequest) {
             adminName,
             'REJECT_PAYMENT',
             'ORDER',
-            orderId,
+            order.id,
             JSON.stringify({ orderNumber: order.order_number, reason: rejectionReason.trim() }),
           ]
         )

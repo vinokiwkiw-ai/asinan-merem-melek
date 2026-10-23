@@ -190,7 +190,6 @@ function runMigrations(database: DatabaseSync) {
           WHERE transaction_type = 'EARN'
             AND reference_id IS NOT NULL
           GROUP BY reference_id
-        );
     `)
     database.exec(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_ledger_earn_idempotency
@@ -199,6 +198,58 @@ function runMigrations(database: DatabaseSync) {
     `)
   } catch (e) {
     // If index already exists or table setup handled it, ignore
+  }
+
+  // 12. Backfill customer_id on orders where customer_id is NULL
+  try {
+    database.exec(`
+      UPDATE orders
+      SET customer_id = 'cust_1792695128413_eee5e6'
+      WHERE customer_name = 'deri' AND (customer_id IS NULL OR customer_id = '');
+    `)
+  } catch (e) {}
+
+  // 13. Reconcile automatic loyalty points for historical completed orders
+  try {
+    const uncreditedOrders = database.prepare(`
+      SELECT o.id, o.order_number, o.customer_id, o.customer_phone, o.subtotal, o.discount
+      FROM orders o
+      WHERE o.order_status = 'selesai'
+        AND o.payment_status = 'paid'
+        AND (o.subtotal - COALESCE(o.discount, 0)) >= 100000
+        AND o.order_number NOT IN (
+          SELECT reference_id FROM membership_ledger WHERE transaction_type = 'EARN' AND reference_id IS NOT NULL
+        )
+    `).all() as any[]
+
+    if (uncreditedOrders && uncreditedOrders.length > 0) {
+      for (const ord of uncreditedOrders) {
+        const eligibleSpend = Math.max(0, ord.subtotal - (ord.discount || 0))
+        const points = Math.floor(eligibleSpend / 100000) * 100
+        if (points > 0) {
+          const targetCustId = ord.customer_id || (ord.customer_phone ? `cust_${String(ord.customer_phone).replace(/\\D/g, '')}` : `cust_${ord.order_number}`)
+          const balanceRow = database.prepare('SELECT COALESCE(SUM(points), 0) as balance FROM membership_ledger WHERE customer_id = ?').all(targetCustId)[0] as any
+          const newBal = (balanceRow ? Number(balanceRow.balance) : 0) + points
+          const ledgerId = `ledg_rec_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`
+
+          database.prepare(`
+            INSERT OR IGNORE INTO membership_ledger (
+              id, customer_id, points, transaction_type, reference_id, balance_after, reason, created_at
+            ) VALUES (?, ?, ?, 'EARN', ?, ?, ?, ?)
+          `).run(
+            ledgerId,
+            targetCustId,
+            points,
+            ord.order_number,
+            newBal,
+            `Poin loyalitas dari pesanan ${ord.order_number} (Rekonsiliasi otomatis belanja produk Rp ${eligibleSpend.toLocaleString('id-ID')})`,
+            new Date().toISOString()
+          )
+        }
+      }
+    }
+  } catch (e) {
+    // Ignore migration error
   }
 }
 
@@ -766,6 +817,146 @@ function ensureSeeded(database: DatabaseSync) {
   console.log('Asinan Merem Melek auto-seed finished successfully!')
 }
 
+function ensureHistoricalData(database: DatabaseSync) {
+  try {
+    const orderCountRow = database.prepare('SELECT count(*) as count FROM orders;').all()[0] as any
+    if (orderCountRow && Number(orderCountRow.count) > 0) {
+      return
+    }
+
+    const seedPath = path.resolve(process.cwd(), 'data', 'seed_data.json')
+    if (!fs.existsSync(seedPath)) {
+      return
+    }
+
+    const raw = fs.readFileSync(seedPath, 'utf-8')
+    const seedData = JSON.parse(raw)
+
+    database.exec('BEGIN IMMEDIATE')
+    try {
+      if (Array.isArray(seedData.customers)) {
+        const stmt = database.prepare(
+          'INSERT OR IGNORE INTO customers (id, phone, name, email, created_at) VALUES (?, ?, ?, ?, ?)'
+        )
+        for (const c of seedData.customers) {
+          stmt.run(c.id, c.phone, c.name, c.email || null, c.created_at || new Date().toISOString())
+        }
+      }
+
+      if (Array.isArray(seedData.orders)) {
+        const stmt = database.prepare(`
+          INSERT OR IGNORE INTO orders (
+            id, order_number, idempotency_key, customer_id, customer_name, customer_phone,
+            branch_id, delivery_type, delivery_address, delivery_instructions,
+            courier_name, courier_tracking_number, courier_status, estimated_delivery_time,
+            subtotal, discount, gift_charge, delivery_fee, total,
+            order_status, payment_status, payment_expires_at, tracking_token,
+            customer_confirmed_at, receipt_photo_url, receipt_photo_uploaded_at,
+            confirmed_by_id, confirmed_by_name, delivery_issue_reported, delivery_issue_notes,
+            delivery_issue_reported_at, voucher_code, voucher_id, created_at, updated_at
+          ) VALUES (
+            ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?,
+            ?, ?, ?, ?,
+            ?, ?, ?, ?, ?,
+            ?, ?, ?, ?,
+            ?, ?, ?,
+            ?, ?, ?, ?,
+            ?, ?, ?, ?, ?
+          )
+        `)
+        for (const o of seedData.orders) {
+          stmt.run(
+            o.id, o.order_number, o.idempotency_key, o.customer_id, o.customer_name, o.customer_phone,
+            o.branch_id, o.delivery_type, o.delivery_address, o.delivery_instructions,
+            o.courier_name, o.courier_tracking_number, o.courier_status, o.estimated_delivery_time,
+            o.subtotal, o.discount, o.gift_charge, o.delivery_fee, o.total,
+            o.order_status, o.payment_status, o.payment_expires_at, o.tracking_token,
+            o.customer_confirmed_at, o.receipt_photo_url, o.receipt_photo_uploaded_at,
+            o.confirmed_by_id, o.confirmed_by_name, o.delivery_issue_reported, o.delivery_issue_notes,
+            o.delivery_issue_reported_at, o.voucher_code, o.voucher_id, o.created_at, o.updated_at
+          )
+        }
+      }
+
+      if (Array.isArray(seedData.order_items)) {
+        const stmt = database.prepare(`
+          INSERT OR IGNORE INTO order_items (
+            id, order_id, product_id, product_name, size, unit_price, qty, subtotal, custom_fruit_notes
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `)
+        for (const oi of seedData.order_items) {
+          stmt.run(oi.id, oi.order_id, oi.product_id, oi.product_name, oi.size, oi.unit_price, oi.qty, oi.subtotal, oi.custom_fruit_notes)
+        }
+      }
+
+      if (Array.isArray(seedData.order_item_seasonings)) {
+        const stmt = database.prepare(`
+          INSERT OR IGNORE INTO order_item_seasonings (
+            id, order_item_id, seasoning_id, seasoning_name, qty, extra_price
+          ) VALUES (?, ?, ?, ?, ?, ?)
+        `)
+        for (const s of seedData.order_item_seasonings) {
+          stmt.run(s.id, s.order_item_id, s.seasoning_id, s.seasoning_name, s.qty, s.extra_price)
+        }
+      }
+
+      if (Array.isArray(seedData.gift_details)) {
+        const stmt = database.prepare(`
+          INSERT OR IGNORE INTO gift_details (
+            id, order_id, is_gift, recipient_name, recipient_phone, recipient_address,
+            sender_name, is_sender_visible, card_design, card_message, has_gift_packaging,
+            packaging_fee, card_fee
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `)
+        for (const g of seedData.gift_details) {
+          stmt.run(
+            g.id, g.order_id, g.is_gift, g.recipient_name, g.recipient_phone, g.recipient_address,
+            g.sender_name, g.is_sender_visible, g.card_design, g.card_message, g.has_gift_packaging,
+            g.packaging_fee, g.card_fee
+          )
+        }
+      }
+
+      if (Array.isArray(seedData.payments)) {
+        const stmt = database.prepare(`
+          INSERT OR IGNORE INTO payments (
+            id, order_id, bank_name, account_number, account_holder, amount_expected,
+            amount_transferred, reference_number, proof_image_path, uploaded_at, verified_at,
+            rejection_reason, status, gateway_provider, gateway_reference, gateway_payload, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `)
+        for (const p of seedData.payments) {
+          stmt.run(
+            p.id, p.order_id, p.bank_name, p.account_number, p.account_holder, p.amount_expected,
+            p.amount_transferred, p.reference_number, p.proof_image_path, p.uploaded_at, p.verified_at,
+            p.rejection_reason, p.status, p.gateway_provider, p.gateway_reference, p.gateway_payload, p.created_at
+          )
+        }
+      }
+
+      if (Array.isArray(seedData.membership_ledger)) {
+        const stmt = database.prepare(`
+          INSERT OR IGNORE INTO membership_ledger (
+            id, customer_id, points, transaction_type, reference_id, balance_after, reason, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `)
+        for (const m of seedData.membership_ledger) {
+          stmt.run(m.id, m.customer_id, m.points, m.transaction_type, m.reference_id, m.balance_after, m.reason, m.created_at)
+        }
+      }
+
+      database.exec('COMMIT')
+      console.log('[DB] Historical seed data restored successfully!')
+    } catch (err) {
+      database.exec('ROLLBACK')
+      console.error('[DB] Failed restoring seed data:', err)
+    }
+  } catch (err) {
+    console.warn('[DB] ensureHistoricalData check skipped:', err)
+  }
+}
+
 export function getDb(): DatabaseSync {
   if (dbInstance) {
     return dbInstance
@@ -773,6 +964,19 @@ export function getDb(): DatabaseSync {
 
   if (!fs.existsSync(DB_DIR)) {
     fs.mkdirSync(DB_DIR, { recursive: true })
+  }
+
+  // On Vercel: copy bundled data/amm.db on cold boot if /tmp database does not exist
+  if (process.env.VERCEL && !fs.existsSync(DB_FILE)) {
+    const bundledDbPath = path.resolve(process.cwd(), 'data', 'amm.db')
+    if (fs.existsSync(bundledDbPath)) {
+      try {
+        fs.copyFileSync(bundledDbPath, DB_FILE)
+        console.log('[DB] Successfully initialized /tmp/amm-data/amm.db from bundled database.')
+      } catch (copyErr) {
+        console.error('[DB] Failed copying bundled database:', copyErr)
+      }
+    }
   }
 
   dbInstance = new DatabaseSync(DB_FILE)
@@ -789,6 +993,7 @@ export function getDb(): DatabaseSync {
 
   runMigrations(dbInstance)
   ensureSeeded(dbInstance)
+  ensureHistoricalData(dbInstance)
 
   return dbInstance
 }

@@ -20,15 +20,19 @@ export async function GET(req: NextRequest) {
     const status = searchParams.get('status')?.trim()
     const search = searchParams.get('search')?.trim()
 
+    const rawPhone = String(sessionCustomer.phone || '').replace(/\D/g, '')
+    const phone62 = rawPhone.startsWith('62') ? rawPhone : (rawPhone.startsWith('0') ? '62' + rawPhone.slice(1) : '62' + rawPhone)
+    const phone08 = phone62.startsWith('62') ? '0' + phone62.slice(2) : phone62
+
     // Security: Strictly query orders belonging to authenticated session customer
     let sql = `
       SELECT o.*,
              p.bank_name, p.status as payment_txn_status, p.reference_number as payment_reference
       FROM orders o
       LEFT JOIN payments p ON o.id = p.order_id
-      WHERE (o.customer_id = ? OR o.customer_phone = ?)
+      WHERE (o.customer_id = ? OR o.customer_phone = ? OR o.customer_phone = ? OR o.customer_phone = ?)
     `
-    const params: any[] = [sessionCustomer.id, sessionCustomer.phone]
+    const params: any[] = [sessionCustomer.id, sessionCustomer.phone, phone62, phone08]
 
     // Optional status filter
     if (status && status !== 'semua') {

@@ -111,9 +111,19 @@ export default function AccountPage() {
     initSession()
   }, [router])
 
+  const getAuthHeaders = (): Record<string, string> => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('amm_customer_token') : null
+    const headers: Record<string, string> = {}
+    if (token) headers['Authorization'] = `Bearer ${token}`
+    return headers
+  }
+
   const loadMembership = async (customerId: string) => {
     try {
-      const res = await fetch(`/api/membership?customerId=${customerId}`)
+      const res = await fetch(`/api/membership?customerId=${customerId}`, {
+        headers: getAuthHeaders(),
+        credentials: 'include',
+      })
       const data = await res.json()
       if (data.summary) {
         setMembership(data.summary)
@@ -126,7 +136,10 @@ export default function AccountPage() {
 
   const loadAddresses = async (customerId: string) => {
     try {
-      const res = await fetch(`/api/customer/addresses?customerId=${customerId}`)
+      const res = await fetch(`/api/customer/addresses?customerId=${customerId}`, {
+        headers: getAuthHeaders(),
+        credentials: 'include',
+      })
       const data = await res.json()
       if (data.addresses) setAddresses(data.addresses)
     } catch (err) {
@@ -143,7 +156,10 @@ export default function AccountPage() {
       if (status && status !== 'semua') queryParams.set('status', status)
       if (search) queryParams.set('search', search)
 
-      const res = await fetch(`/api/customer/orders?${queryParams.toString()}`)
+      const res = await fetch(`/api/customer/orders?${queryParams.toString()}`, {
+        headers: getAuthHeaders(),
+        credentials: 'include',
+      })
       const data = await res.json()
       if (data.orders) setOrders(data.orders)
     } catch (err) {
@@ -160,7 +176,8 @@ export default function AccountPage() {
     try {
       const res = await fetch('/api/membership', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        credentials: 'include',
         body: JSON.stringify({
           action: 'REDEEM',
           customerId: customer.id,
@@ -187,7 +204,8 @@ export default function AccountPage() {
     try {
       const res = await fetch('/api/customer/addresses', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        credentials: 'include',
         body: JSON.stringify({
           customerId: customer.id,
           label: newLabel,
@@ -214,7 +232,11 @@ export default function AccountPage() {
   const handleDeleteAddress = async (id: string) => {
     if (!customer) return
     try {
-      await fetch(`/api/customer/addresses?id=${id}&customerId=${customer.id}`, { method: 'DELETE' })
+      await fetch(`/api/customer/addresses?id=${id}&customerId=${customer.id}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+        credentials: 'include',
+      })
       loadAddresses(customer.id)
     } catch (err) {
       console.error(err)

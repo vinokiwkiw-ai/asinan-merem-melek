@@ -65,16 +65,27 @@ export default function OrderTrackingPage() {
   const [submittingReview, setSubmittingReview] = useState<boolean>(false)
   const [reviewSuccess, setReviewSuccess] = useState<boolean>(false)
 
+  const retryCountRef = useRef<number>(0)
   const fetchOrder = async () => {
     try {
       const res = await fetch(`/api/orders/${orderNumber}/payment?token=${token}`)
-      if (!res.ok) throw new Error('Gagal memuat status pesanan.')
+      if (!res.ok) {
+        if (res.status === 404 && retryCountRef.current < 4) {
+          retryCountRef.current += 1
+          return
+        }
+        throw new Error('Gagal memuat status pesanan.')
+      }
       const data = await res.json()
-      setOrder(data.order)
+      if (data.order) {
+        setOrder(data.order)
+      }
       setLoading(false)
     } catch (err) {
       console.error(err)
-      setLoading(false)
+      if (retryCountRef.current >= 4) {
+        setLoading(false)
+      }
     }
   }
 

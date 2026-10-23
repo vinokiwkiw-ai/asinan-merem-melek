@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { MembershipService } from '@/lib/membership/membershipService'
+import { SessionService } from '@/lib/auth/sessionService'
+import { AdminSessionService } from '@/lib/auth/adminSessionService'
 
 export async function POST(req: NextRequest, { params }: { params: { orderNumber: string } }) {
   try {
     const { orderNumber } = params
-    const body = await req.json()
+    const body = await req.json().catch(() => ({}))
     const { token, confirmedById, confirmedByName, receiptPhotoUrl } = body
 
     const order = db.queryOne<{
@@ -18,20 +20,32 @@ export async function POST(req: NextRequest, { params }: { params: { orderNumber
       payment_status: string
       customer_id: string
       customer_name: string
+      customer_phone: string
       customer_confirmed_at: string
       tracking_token: string
-    }>('SELECT * FROM orders WHERE order_number = ?', [orderNumber])
+    }>('SELECT * FROM orders WHERE order_number = ? OR id = ?', [orderNumber, orderNumber])
 
-    // Validate authorization: requires valid tracking token OR authenticated customer session
+    if (!order) {
+      return NextResponse.json({ error: 'Pesanan tidak ditemukan.' }, { status: 404 })
+    }
+
+    // Validate authorization: requires valid tracking token, authenticated customer session, or active admin
+    const adminAuth = AdminSessionService.verifyAdminRequest(req)
     const sessionToken = req.cookies.get('amm_customer_session_token')?.value ||
       (req.headers.get('authorization')?.startsWith('Bearer ') ? req.headers.get('authorization')?.slice(7).trim() : null)
     const sessionCustomer = sessionToken ? SessionService.getCustomerFromToken(sessionToken) : null
 
     const isTokenValid = Boolean(token && order.tracking_token === token)
-    const isCustomerMatch = Boolean(sessionCustomer && (sessionCustomer.id === order.customer_id || sessionCustomer.phone === order.customer_phone))
+    const isCustomerMatch = Boolean(
+      sessionCustomer &&
+      (sessionCustomer.id === order.customer_id ||
+       sessionCustomer.phone === order.customer_phone ||
+       sessionCustomer.phone.replace(/\D/g, '') === String(order.customer_phone || '').replace(/\D/g, ''))
+    )
+    const isAdmin = adminAuth.authorized
 
-    if (!isTokenValid && !isCustomerMatch) {
-      return NextResponse.json({ error: 'Akses tidak sah. Token pelacakan atau sesi login customer diperlukan.' }, { status: 403 })
+    if (!isTokenValid && !isCustomerMatch && !isAdmin) {
+      return NextResponse.json({ error: 'Akses tidak sah. Token pelacakan atau sesi login customer/admin diperlukan.' }, { status: 403 })
     }
 
     if (order.customer_confirmed_at) {
@@ -55,8 +69,9 @@ export async function POST(req: NextRequest, { params }: { params: { orderNumber
     }
 
     const nowStr = new Date().toISOString()
-    const finalName = confirmedByName?.trim() || order.customer_name
-    const finalId = confirmedById?.trim() || order.customer_id || `cust_${order.order_number}`
+    const finalName = confirmedByName?.trim() || order.customer_name || (isAdmin ? 'Admin AMM' : 'Pelanggan')
+    const finalId = confirmedById?.trim() || order.customer_id || (order.customer_phone ? `cust_${String(order.customer_phone).replace(/\D/g, '')}` : `cust_${order.order_number}`)
+    const targetLoyaltyCustomerId = order.customer_id || (order.customer_phone ? `cust_${String(order.customer_phone).replace(/\D/g, '')}` : finalId)
 
     db.transaction(() => {
       // 1. Update order status to selesai
@@ -91,9 +106,9 @@ export async function POST(req: NextRequest, { params }: { params: { orderNumber
           order.id,
           order.order_status,
           'selesai',
-          'CUSTOMER',
+          isAdmin ? 'ADMIN' : 'CUSTOMER',
           finalId,
-          `Pelanggan (${finalName}) mengonfirmasi pesanan telah diterima dengan baik.` +
+          `${isAdmin ? 'Admin' : 'Pelanggan'} (${finalName}) mengonfirmasi pesanan telah diterima dengan baik.` +
             (receiptPhotoUrl ? ' (Foto bukti penerimaan terlampir).' : ''),
         ]
       )
@@ -102,7 +117,7 @@ export async function POST(req: NextRequest, { params }: { params: { orderNumber
     // 3. Award loyalty points via MembershipService (Rp 100.000 = 100 poin, kelipatan, anti-duplikasi)
     const pointResult = MembershipService.awardOrderPoints({
       orderNumber: order.order_number,
-      customerId: finalId,
+      customerId: targetLoyaltyCustomerId,
       subtotal: order.subtotal,
       discount: order.discount || 0,
     })

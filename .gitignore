@@ -36,7 +36,6 @@ yarn-error.log*
 next-env.d.ts
 
 # local sqlite database, uploads & backups
-data/*.db
 data/*.db-wal
 data/*.db-shm
 data/proofs/*
