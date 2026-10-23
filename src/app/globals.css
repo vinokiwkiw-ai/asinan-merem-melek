@@ -3,25 +3,97 @@
 @tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --amm-mango-green: #8BC137;
+  --amm-cream: #FFF8E8;
+  --amm-deep-green: #183F2E;
+  --amm-deep-green-dark: #0C251B;
+  --amm-fresh-yellow: #FFD83D;
+  --amm-coral-red: #FF5954;
+  --amm-bg: #F8FAF6;
+  --amm-card: #FFFFFF;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  body {
+    background-color: #F8FAF6;
+    color: #183F2E;
+    font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
+    min-height: 100vh;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Outfit', 'Inter', sans-serif;
+    color: #183F2E;
   }
 }
 
-body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+/* Accessible reduced-motion support */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
+/* MODERN MOBILE-APP DASHBOARD CARD THEMING (REFERENCE 1) */
+.glass-card, .amm-card {
+  background: #FFFFFF;
+  border: 1px solid rgba(24, 63, 46, 0.08);
+  box-shadow: 0 4px 20px -2px rgba(24, 63, 46, 0.04), 0 2px 6px -1px rgba(24, 63, 46, 0.02);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glass-card:hover, .amm-card:hover {
+  border-color: rgba(139, 193, 55, 0.35);
+  box-shadow: 0 10px 28px -4px rgba(24, 63, 46, 0.08);
+}
+
+.glass-nav {
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(24, 63, 46, 0.08);
+}
+
+/* Pill Badges & Buttons */
+.amm-pill {
+  border-radius: 9999px;
+  transition: all 0.15s ease-in-out;
+}
+
+/* Glow & Accent Tokens */
+.glow-mango {
+  box-shadow: 0 4px 20px rgba(139, 193, 55, 0.25);
+}
+
+.glow-yellow {
+  box-shadow: 0 4px 20px rgba(255, 216, 61, 0.25);
+}
+
+.glow-coral {
+  box-shadow: 0 4px 20px rgba(255, 89, 84, 0.25);
+}
+
+/* Subtle dot pattern overlay */
+.bg-radial-dots {
+  background-image: radial-gradient(circle at 1px 1px, rgba(24, 63, 46, 0.05) 1px, transparent 0);
+  background-size: 20px 20px;
+}
+
+/* Smooth Scrollbar */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+::-webkit-scrollbar-track {
+  background: #F1F5F0;
+}
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #8BC137;
 }
