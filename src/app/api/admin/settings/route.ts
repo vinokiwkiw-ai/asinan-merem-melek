@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { AdminSessionService } from '@/lib/auth/adminSessionService'
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    const auth = AdminSessionService.verifyAdminRequest(req)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status || 401 })
+    }
+
     const settingsRows = db.query<{ key: string; value: string }>('SELECT key, value FROM app_settings')
     const settings: Record<string, any> = {}
     settingsRows.forEach((r) => {
@@ -28,6 +34,11 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = AdminSessionService.verifyAdminRequest(req)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status || 401 })
+    }
+
     const body = await req.json()
     const { action, key, value, schedule, exception } = body
 

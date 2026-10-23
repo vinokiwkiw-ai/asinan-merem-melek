@@ -38,11 +38,11 @@ export const Navbar: React.FC<NavbarProps> = ({
   )
 
   useEffect(() => {
-    fetch('/api/admin/settings')
+    fetch('/api/settings/public')
       .then((res) => res.json())
       .then((data) => {
-        if (data.settings?.announcement_bar?.text) {
-          setAnnouncement(data.settings.announcement_bar.text)
+        if (data.announcement) {
+          setAnnouncement(data.announcement)
         }
       })
       .catch(() => {})

@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { AdminSessionService } from '@/lib/auth/adminSessionService'
 
 export async function GET(req: NextRequest) {
   try {
+    const auth = AdminSessionService.verifyAdminRequest(req)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status || 401 })
+    }
+
     const status = req.nextUrl.searchParams.get('status')
     const branchId = req.nextUrl.searchParams.get('branchId')
     const search = req.nextUrl.searchParams.get('search')
@@ -76,6 +82,11 @@ export async function GET(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   try {
+    const auth = AdminSessionService.verifyAdminRequest(req)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status || 401 })
+    }
+
     const body = await req.json()
     const {
       orderId,
@@ -86,9 +97,9 @@ export async function PATCH(req: NextRequest) {
       estimatedDeliveryTime,
       correctionReason,
       adminNotes,
-      adminName = 'Admin',
-      adminId = 'usr_superadmin_01',
     } = body
+    const adminName = auth.user?.name || 'Admin'
+    const adminId = auth.user?.id || 'admin'
 
     if (!orderId) {
       return NextResponse.json({ error: 'Order ID wajib disertakan.' }, { status: 400 })

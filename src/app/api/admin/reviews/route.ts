@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { AdminSessionService } from '@/lib/auth/adminSessionService'
 
 export async function GET(req: NextRequest) {
   try {
+    const auth = AdminSessionService.verifyAdminRequest(req)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status || 401 })
+    }
+
     const { searchParams } = new URL(req.url)
     const rating = searchParams.get('rating')
     const published = searchParams.get('published')
@@ -43,6 +49,11 @@ export async function GET(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   try {
+    const auth = AdminSessionService.verifyAdminRequest(req)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status || 401 })
+    }
+
     const body = await req.json()
     const { id, isPublished, isFeatured, adminReply } = body
 

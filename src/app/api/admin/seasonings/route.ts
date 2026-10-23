@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { AdminSessionService } from '@/lib/auth/adminSessionService'
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    const auth = AdminSessionService.verifyAdminRequest(req)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status || 401 })
+    }
+
     const seasonings = db.query<any>('SELECT * FROM seasonings ORDER BY sort_order ASC, name ASC')
     return NextResponse.json({ success: true, seasonings })
   } catch (error: any) {
@@ -12,6 +18,11 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = AdminSessionService.verifyAdminRequest(req)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status || 401 })
+    }
+
     const body = await req.json()
     const { id, name, description, extraPrice = 0, isAvailable = 1, sortOrder = 0 } = body
 
@@ -39,6 +50,11 @@ export async function POST(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   try {
+    const auth = AdminSessionService.verifyAdminRequest(req)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status || 401 })
+    }
+
     const body = await req.json()
     const { id, name, description, extraPrice, isAvailable, sortOrder } = body
 
@@ -88,6 +104,11 @@ export async function PUT(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
+    const auth = AdminSessionService.verifyAdminRequest(req)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status || 401 })
+    }
+
     const { searchParams } = new URL(req.url)
     const id = searchParams.get('id')
     if (!id) {

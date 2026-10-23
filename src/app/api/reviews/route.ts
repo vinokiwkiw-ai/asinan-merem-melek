@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { SessionService, SESSION_COOKIE_NAME } from '@/lib/auth/sessionService'
 
 /**
  * Server-side customer phone privacy masking utility
@@ -78,6 +79,14 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const sessionToken = req.cookies.get(SESSION_COOKIE_NAME)?.value ||
+      (req.headers.get('authorization')?.startsWith('Bearer ') ? req.headers.get('authorization')?.slice(7).trim() : null)
+    const sessionCustomer = sessionToken ? SessionService.getCustomerFromToken(sessionToken) : null
+
+    if (!sessionCustomer) {
+      return NextResponse.json({ error: 'Silakan login terlebih dahulu untuk memberikan ulasan.' }, { status: 401 })
+    }
+
     const body = await req.json()
     const { orderId, orderNumber, customerName, productId, rating, comment, photoUrl } = body
 
@@ -103,6 +112,11 @@ export async function POST(req: NextRequest) {
 
     if (!order) {
       return NextResponse.json({ error: 'Pesanan tidak ditemukan.' }, { status: 404 })
+    }
+
+    // Verify customer owns this order
+    if (order.customer_id && order.customer_id !== sessionCustomer.id && order.customer_phone !== sessionCustomer.phone) {
+      return NextResponse.json({ error: 'Akses ditolak. Anda hanya dapat mengulas pesanan milik Anda sendiri.' }, { status: 403 })
     }
 
     // Must be paid & completed

@@ -18,6 +18,7 @@ import {
   Sparkles,
   AlertCircle,
   RefreshCw,
+  User,
 } from 'lucide-react'
 import { MangoMascot } from '@/components/mascot/MangoMascot'
 import { GiftSection, GiftConfig } from '@/components/checkout/GiftSection'
@@ -34,8 +35,25 @@ export default function CartPage() {
   } = useAppStore() || {}
 
   // Customer contact details
+  const [customerSession, setCustomerSession] = useState<any>(null)
+  const [checkingAuth, setCheckingAuth] = useState(true)
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
+
+  // Check verified customer session on mount
+  useEffect(() => {
+    fetch('/api/auth/customer')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.authenticated && data.customer) {
+          setCustomerSession(data.customer)
+          setCustomerName((prev) => prev || data.customer.name || '')
+          setCustomerPhone((prev) => prev || data.customer.phone || '')
+        }
+      })
+      .catch(console.error)
+      .finally(() => setCheckingAuth(false))
+  }, [])
 
   // Delivery options (online delivery only, pickup disabled)
   const deliveryType = 'delivery'
@@ -224,6 +242,12 @@ export default function CartPage() {
   // Handle Checkout Order Submission
   const handlePlaceOrder = async () => {
     setOrderError(null)
+
+    if (!customerSession) {
+      setOrderError('Silakan masuk ke akun member Anda terlebih dahulu untuk membuat pesanan.')
+      router.push('/login?redirect=/cart')
+      return
+    }
 
     if (cart.length === 0) {
       setOrderError('Keranjang Anda masih kosong.')
@@ -752,31 +776,41 @@ export default function CartPage() {
             </div>
 
             {/* Submit Checkout Button */}
-            <button
-              type="button"
-              disabled={submittingOrder || unavailableItemIds.size > 0 || Boolean(currentBranchStatus && !currentBranchStatus.isOpen)}
-              onClick={handlePlaceOrder}
-              className={`w-full py-4 rounded-full font-black text-sm flex items-center justify-center gap-2 shadow-md transition ${
-                submittingOrder || unavailableItemIds.size > 0 || (currentBranchStatus && !currentBranchStatus.isOpen)
-                  ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                  : 'bg-[#8BC137] hover:bg-[#7ab02d] text-[#183F2E] cursor-pointer'
-              }`}
-            >
-              {submittingOrder ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>Memproses Pesanan...</span>
-                </>
-              ) : unavailableItemIds.size > 0 ? (
-                <span>Hapus Produk Habis Terlebih Dahulu</span>
-              ) : currentBranchStatus && !currentBranchStatus.isOpen ? (
-                <span>Outlet Sedang Tutup ({currentBranchStatus.nextOpenTime || 'Tutup Sementara'})</span>
-              ) : (
-                <>
-                  Lanjut ke Pembayaran <ArrowRight className="w-4 h-4" />
-                </>
-              )}
-            </button>
+            {!customerSession && !checkingAuth ? (
+              <button
+                type="button"
+                onClick={() => router.push('/login?redirect=/cart')}
+                className="w-full py-4 rounded-full font-black text-sm flex items-center justify-center gap-2 shadow-md transition bg-[#8BC137] hover:bg-[#7ab02d] text-[#183F2E] cursor-pointer"
+              >
+                <User className="w-4 h-4" /> Masuk Akun untuk Melanjutkan Pembayaran
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={submittingOrder || unavailableItemIds.size > 0 || Boolean(currentBranchStatus && !currentBranchStatus.isOpen)}
+                onClick={handlePlaceOrder}
+                className={`w-full py-4 rounded-full font-black text-sm flex items-center justify-center gap-2 shadow-md transition ${
+                  submittingOrder || unavailableItemIds.size > 0 || (currentBranchStatus && !currentBranchStatus.isOpen)
+                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                    : 'bg-[#8BC137] hover:bg-[#7ab02d] text-[#183F2E] cursor-pointer'
+                }`}
+              >
+                {submittingOrder ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Memproses Pesanan...</span>
+                  </>
+                ) : unavailableItemIds.size > 0 ? (
+                  <span>Hapus Produk Habis Terlebih Dahulu</span>
+                ) : currentBranchStatus && !currentBranchStatus.isOpen ? (
+                  <span>Outlet Sedang Tutup ({currentBranchStatus.nextOpenTime || 'Tutup Sementara'})</span>
+                ) : (
+                  <>
+                    Lanjut ke Pembayaran <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
+              </button>
+            )}
 
             <div className="flex items-center justify-center gap-2 text-[10px] text-slate-400 pt-2">
               <ShieldCheck className="w-3.5 h-3.5 text-[#8BC137]" />

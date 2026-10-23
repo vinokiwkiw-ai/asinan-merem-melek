@@ -6,8 +6,8 @@ import { Lock, Eye, EyeOff, ShieldCheck, RefreshCw } from 'lucide-react'
 import { MangoMascot } from '@/components/mascot/MangoMascot'
 
 export default function AdminLoginPage() {
-  const [username, setUsername] = useState('superadmin')
-  const [password, setPassword] = useState('admin12345')
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -27,13 +27,14 @@ export default function AdminLoginPage() {
 
       const data = await res.json()
       if (!res.ok) {
-        throw new Error(data.error || 'Username atau kata sandi salah.')
+        throw new Error(data.error || 'Kredensial tidak valid. Periksa kembali ID dan kata sandi Anda.')
       }
 
       sessionStorage.setItem('amm_admin_user', JSON.stringify(data.user))
       router.push('/admin')
+      router.refresh()
     } catch (err: any) {
-      setError(err.message)
+      setError(err.message || 'Kredensial tidak valid. Periksa kembali ID dan kata sandi Anda.')
     } finally {
       setLoading(false)
     }
@@ -61,15 +62,16 @@ export default function AdminLoginPage() {
           <form onSubmit={handleLogin} className="space-y-4 text-xs">
             <div>
               <label className="block text-[11px] font-bold text-slate-700 mb-1.5 uppercase tracking-wider">
-                Username / Email Staf
+                ID Staf / Username
               </label>
               <input
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-slate-800 placeholder:text-slate-400 focus:outline-none focus:bg-white focus:border-[#183F2E] focus:ring-2 focus:ring-[#8BC137]/20 transition text-sm"
-                placeholder="superadmin"
+                placeholder="Masukkan ID / username staf"
                 required
+                autoComplete="username"
               />
             </div>
 
@@ -85,11 +87,13 @@ export default function AdminLoginPage() {
                   className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-slate-800 placeholder:text-slate-400 focus:outline-none focus:bg-white focus:border-[#183F2E] focus:ring-2 focus:ring-[#8BC137]/20 transition text-sm pr-11"
                   placeholder="••••••••"
                   required
+                  autoComplete="current-password"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 transition"
+                  aria-label={showPassword ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi'}
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -100,7 +104,7 @@ export default function AdminLoginPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full py-3.5 rounded-full bg-[#8BC137] hover:bg-[#7ab02d] text-[#183F2E] font-black text-sm flex items-center justify-center gap-2 shadow-md transition cursor-pointer"
+                className="w-full py-3.5 rounded-full bg-[#8BC137] hover:bg-[#7ab02d] text-[#183F2E] font-black text-sm flex items-center justify-center gap-2 shadow-md transition cursor-pointer disabled:opacity-60"
               >
                 {loading ? (
                   <>
@@ -116,12 +120,10 @@ export default function AdminLoginPage() {
           </form>
 
           <div className="pt-2 text-center">
-            <div className="p-3 bg-slate-50 border border-slate-100 rounded-2xl">
-              <span className="text-[11px] text-slate-500 block">
-                Default Super Admin: <code className="text-[#183F2E] font-bold font-mono">superadmin</code> /{' '}
-                <code className="text-[#183F2E] font-bold font-mono">admin12345</code>
-              </span>
-            </div>
+            <span className="text-[11px] text-slate-400 block flex items-center justify-center gap-1.5">
+              <ShieldCheck className="w-3.5 h-3.5 text-[#8BC137]" />
+              Akses khusus staf dan kasir terdaftar Asinan Merem Melek.
+            </span>
           </div>
         </div>
       </div>

@@ -63,30 +63,9 @@ export default function AccountPage() {
         console.error('Session check error:', err)
       }
 
-      // Fallback to localStorage session
-      const saved = localStorage.getItem('amm_customer_session')
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved)
-          setCustomer(parsed)
-          loadMembership(parsed.id)
-          loadAddresses(parsed.id)
-          loadOrders(parsed.phone)
-          return
-        } catch {}
-      }
-
-      // Default demo session if no active session
-      const demoCust = {
-        id: 'cust_demo_01',
-        name: 'Pelanggan Setia AMM',
-        phone: '6281234567890',
-        email: 'pelanggan@meremmelek.site',
-      }
-      setCustomer(demoCust)
-      loadMembership(demoCust.id)
-      loadAddresses(demoCust.id)
-      loadOrders(demoCust.phone)
+      // If unauthenticated, clear any stale client cache and redirect to login
+      localStorage.removeItem('amm_customer_session')
+      router.push('/login?redirect=/account')
     }
 
     initSession()

@@ -2,9 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
+import { AdminSessionService } from '@/lib/auth/adminSessionService'
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = AdminSessionService.verifyAdminRequest(req)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status || 401 })
+    }
+
     const formData = await req.formData()
     const file = formData.get('file') as File | null
 

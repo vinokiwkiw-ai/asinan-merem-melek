@@ -364,3 +364,14 @@ CREATE TABLE IF NOT EXISTS customer_sessions (
   FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS admin_sessions (
+  id TEXT PRIMARY KEY,
+  admin_id TEXT NOT NULL,
+  session_token TEXT UNIQUE NOT NULL,
+  ip_address TEXT,
+  user_agent TEXT,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (admin_id) REFERENCES admin_users(id) ON DELETE CASCADE
+);
+

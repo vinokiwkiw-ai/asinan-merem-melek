@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   LayoutDashboard,
   CheckCircle,
@@ -37,6 +38,7 @@ import {
   Percent,
   Archive,
   Save,
+  LogOut,
 } from 'lucide-react'
 import { MangoMascot } from './mascot/MangoMascot'
 
@@ -50,6 +52,7 @@ interface AdminUser {
 }
 
 export const AdminDashboard: React.FC = () => {
+  const router = useRouter()
   const [currentUser, setCurrentUser] = useState<AdminUser | null>(null)
   const [activeModule, setActiveModule] = useState<string>('overview')
 
@@ -139,33 +142,36 @@ export const AdminDashboard: React.FC = () => {
     setTimeout(() => setToast(null), 3500)
   }
 
-  // Load user from session
+  // Verify and load user from active admin session
   useEffect(() => {
-    const saved = sessionStorage.getItem('amm_admin_user')
-    if (saved) {
+    const verifySession = async () => {
       try {
-        setCurrentUser(JSON.parse(saved))
-      } catch {
-        setCurrentUser({
-          id: 'usr_superadmin_01',
-          name: 'Super Administrator',
-          username: 'superadmin',
-          email: 'admin@asinanmeremmelek.site',
-          role: 'SUPER_ADMIN',
-          permissions: ['overview', 'orders', 'payments', 'products', 'outlets', 'vouchers', 'membership', 'reviews', 'reports', 'settings'],
-        })
+        const res = await fetch('/api/admin/auth')
+        const data = await res.json()
+        if (data.authenticated && data.user) {
+          setCurrentUser(data.user)
+          sessionStorage.setItem('amm_admin_user', JSON.stringify(data.user))
+          return
+        }
+      } catch (err) {
+        console.error('Admin session verification failed:', err)
       }
-    } else {
-      setCurrentUser({
-        id: 'usr_superadmin_01',
-        name: 'Super Administrator',
-        username: 'superadmin',
-        email: 'admin@asinanmeremmelek.site',
-        role: 'SUPER_ADMIN',
-        permissions: ['overview', 'orders', 'payments', 'products', 'outlets', 'vouchers', 'membership', 'reviews', 'reports', 'settings'],
-      })
+
+      // If session is invalid, clear cache and redirect to login
+      sessionStorage.removeItem('amm_admin_user')
+      router.push('/admin/login')
     }
-  }, [])
+
+    verifySession()
+  }, [router])
+
+  const handleAdminLogout = async () => {
+    try {
+      await fetch('/api/admin/auth', { method: 'DELETE' })
+    } catch {}
+    sessionStorage.removeItem('amm_admin_user')
+    router.push('/admin/login')
+  }
 
   // Fetch orders & reports
   const fetchOrders = async (statusFilter?: string) => {
@@ -959,10 +965,19 @@ export const AdminDashboard: React.FC = () => {
           </nav>
         </div>
 
-        {/* Footer info */}
-        <div className="pt-4 border-t border-slate-100 text-[11px] text-slate-500">
-          <p className="font-bold text-[#183F2E] truncate">{currentUser?.name}</p>
-          <p className="text-[10px] text-[#8BC137] font-mono mt-0.5 font-bold">WIB (Asia/Jakarta)</p>
+        {/* Footer info & Logout */}
+        <div className="pt-4 border-t border-slate-100 text-[11px] text-slate-500 flex items-center justify-between">
+          <div className="min-w-0 pr-2">
+            <p className="font-bold text-[#183F2E] truncate">{currentUser?.name || 'Administrator'}</p>
+            <p className="text-[10px] text-slate-400 font-mono mt-0.5">{currentUser?.role || 'STAF'}</p>
+          </div>
+          <button
+            onClick={handleAdminLogout}
+            title="Keluar dari sesi admin"
+            className="p-2 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-500 hover:text-rose-600 transition cursor-pointer flex-shrink-0"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
         </div>
       </aside>
 

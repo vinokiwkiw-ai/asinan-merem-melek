@@ -91,19 +91,19 @@ export async function POST(req: NextRequest) {
 
     const normalizedCustomerPhone = normalizePhone(customerPhone)
 
-    // Resolve customer ID from session if authenticated, or find existing customer by phone
-    const sessionToken = req.cookies.get(SESSION_COOKIE_NAME)?.value
+    // 2b. Strictly require authenticated customer session
+    const sessionToken = req.cookies.get(SESSION_COOKIE_NAME)?.value ||
+      (req.headers.get('authorization')?.startsWith('Bearer ') ? req.headers.get('authorization')?.slice(7).trim() : null)
     const sessionCustomer = sessionToken ? SessionService.getCustomerFromToken(sessionToken) : null
-    let customerId = sessionCustomer?.id || null
 
-    if (!customerId) {
-      const existingCust = db.queryOne<{ id: string }>('SELECT id FROM customers WHERE phone = ?', [
-        normalizedCustomerPhone,
-      ])
-      if (existingCust) {
-        customerId = existingCust.id
-      }
+    if (!sessionCustomer) {
+      return NextResponse.json(
+        { error: 'Silakan login terlebih dahulu untuk membuat pesanan.', requireLogin: true },
+        { status: 401 }
+      )
     }
+
+    const customerId = sessionCustomer.id
 
     // 3. Validate Delivery & Shipping Quote (Store Pickup is disabled for all new orders)
     if (deliveryType === 'pickup') {

@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { AdminSessionService } from '@/lib/auth/adminSessionService'
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    const auth = AdminSessionService.verifyAdminRequest(req)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status || 401 })
+    }
+
     const products = db.query('SELECT * FROM products ORDER BY is_signature DESC, name ASC')
     const categories = db.query('SELECT * FROM categories ORDER BY sort_order ASC')
     const seasonings = db.query('SELECT * FROM seasonings ORDER BY extra_price ASC, name ASC')
@@ -21,8 +27,15 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = AdminSessionService.verifyAdminRequest(req)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status || 401 })
+    }
+
     const body = await req.json()
-    const { action, product, seasoning, customizationRule, productId, availabilityStatus, adminName = 'Admin', adminId = 'admin' } = body
+    const { action, product, seasoning, customizationRule, productId, availabilityStatus } = body
+    const adminName = auth.user?.name || 'Admin'
+    const adminId = auth.user?.id || 'admin'
 
     if (action === 'UPDATE_AVAILABILITY') {
       if (!productId || !availabilityStatus) {

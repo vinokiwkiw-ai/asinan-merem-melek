@@ -1,10 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { AdminSessionService } from '@/lib/auth/adminSessionService'
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = AdminSessionService.verifyAdminRequest(req)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status || 401 })
+    }
+
     const body = await req.json()
-    const { orderId, action, rejectionReason, adminName = 'Admin', adminId = 'usr_superadmin_01' } = body
+    const { orderId, action, rejectionReason } = body
+    const adminName = auth.user?.name || 'Admin'
+    const adminId = auth.user?.id || 'admin'
 
     if (!orderId) {
       return NextResponse.json({ error: 'Order ID wajib disertakan.' }, { status: 400 })

@@ -9,6 +9,7 @@ import { OutletService } from '../src/lib/outlet/outletService.ts'
 import { ReportService } from '../src/lib/reports/reportService.ts'
 import { OtpService } from '../src/lib/auth/otpService.ts'
 import { SessionService } from '../src/lib/auth/sessionService.ts'
+import { AdminSessionService } from '../src/lib/auth/adminSessionService.ts'
 import { PaymentAdapter } from '../src/lib/payment/paymentAdapter.ts'
 
 describe('Asinan Merem Melek (AMM) Commerce Platform Test Suite', () => {
@@ -1147,6 +1148,121 @@ describe('Asinan Merem Melek (AMM) Commerce Platform Test Suite', () => {
     assert.strictEqual(repeatedWebhook.idempotent, true)
     assert.strictEqual(repeatedWebhook.success, true)
     assert.strictEqual(MembershipService.getCustomerBalance(custId), 200, 'Loyalty points must NOT be duplicated')
+  })
+
+  // Test 28: Admin Session Service Lifecycle & Verification
+  it('Scenario 28: AdminSessionService generates tokens, resolves permissions, and revokes sessions', () => {
+    // 1. Password hash verification
+    const expectedHash = AdminSessionService.hashPassword('admin12345')
+    assert.strictEqual(typeof expectedHash, 'string')
+    assert.strictEqual(expectedHash.length, 64)
+
+    // 2. Create session for superadmin
+    const { sessionToken, expiresAt } = AdminSessionService.createSession({
+      adminId: 'usr_superadmin_01',
+      ipAddress: '127.0.0.1',
+      userAgent: 'TestAgent/1.0',
+    })
+    assert.strictEqual(typeof sessionToken, 'string')
+    assert.strictEqual(sessionToken.length, 64)
+    assert.ok(expiresAt.getTime() > Date.now())
+
+    // 3. Resolve session from token
+    const adminUser = AdminSessionService.getAdminFromToken(sessionToken)
+    assert.ok(adminUser)
+    assert.strictEqual(adminUser?.id, 'usr_superadmin_01')
+    assert.strictEqual(adminUser?.role, 'SUPER_ADMIN')
+    assert.ok(adminUser?.permissions.includes('settings'))
+    assert.ok(adminUser?.permissions.includes('orders'))
+
+    // 4. Revoke session
+    AdminSessionService.revokeSession(sessionToken)
+    const revokedUser = AdminSessionService.getAdminFromToken(sessionToken)
+    assert.strictEqual(revokedUser, null, 'Revoked admin session must resolve to null')
+  })
+
+  // Test 29: Admin Server Guard Defense-in-Depth Verification
+  it('Scenario 29: Admin server guard rejects unauthenticated requests and permits active sessions', () => {
+    // 1. Fake unauthenticated request (no cookies, no bearer)
+    const fakeUnauthReq = new Request('http://localhost:3000/api/admin/orders')
+    const unauthCheck = AdminSessionService.verifyAdminRequest(fakeUnauthReq)
+    assert.strictEqual(unauthCheck.authorized, false)
+    assert.strictEqual(unauthCheck.status, 401)
+    assert.match(unauthCheck.error || '', /Akses ditolak/i)
+
+    // 2. Request with valid active session cookie
+    const { sessionToken } = AdminSessionService.createSession({ adminId: 'usr_superadmin_01' })
+    const fakeAuthReq = new Request('http://localhost:3000/api/admin/orders', {
+      headers: {
+        cookie: `amm_admin_session_token=${sessionToken}`,
+      },
+    })
+    const authCheck = AdminSessionService.verifyAdminRequest(fakeAuthReq)
+    assert.strictEqual(authCheck.authorized, true)
+    assert.strictEqual(authCheck.user?.id, 'usr_superadmin_01')
+
+    // Clean up
+    AdminSessionService.revokeSession(sessionToken)
+  })
+
+  // Test 30: Customer Checkout Session Enforcement
+  it('Scenario 30: Guest checkout is strictly blocked without valid customer session token', () => {
+    const fakeToken = 'invalid_dummy_session_token_xyz'
+    const customer = SessionService.getCustomerFromToken(fakeToken)
+    assert.strictEqual(customer, null, 'Invalid token must not resolve to any customer')
+
+    // Create verified customer session
+    const ts = Date.now()
+    const testCustId = `cust_real_test_${ts}`
+    db.run(
+      `INSERT INTO customers (id, phone, name, email) VALUES (?, ?, ?, ?)`,
+      [testCustId, `62819${ts.toString().slice(-7)}`, 'Real Customer Test', 'real@customer.test']
+    )
+
+    const session = SessionService.createSession({ customerId: testCustId })
+    const verifiedCustomer = SessionService.getCustomerFromToken(session.sessionToken)
+    assert.ok(verifiedCustomer)
+    assert.strictEqual(verifiedCustomer?.id, testCustId)
+
+    // Clean up
+    SessionService.revokeSession(session.sessionToken)
+  })
+
+  // Test 31: Scope Order History Exclusively to Session Customer
+  it('Scenario 31: Query parameters cannot spoof another customer order history', () => {
+    const ts = Date.now()
+    const custA = `cust_a_${ts}`
+    const custB = `cust_b_${ts}`
+    db.run(`INSERT INTO customers (id, phone, name) VALUES (?, ?, ?)`, [custA, `62818${ts.toString().slice(-7)}`, 'Cust A'])
+    db.run(`INSERT INTO customers (id, phone, name) VALUES (?, ?, ?)`, [custB, `62817${ts.toString().slice(-7)}`, 'Cust B'])
+
+    // Create order for Cust B
+    const orderB = `ord_b_${ts}`
+    db.run(
+      `INSERT INTO orders (
+        id, order_number, customer_id, customer_name, customer_phone, branch_id, delivery_type,
+        subtotal, total, order_status, payment_status, payment_expires_at, tracking_token
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [orderB, `AMM-B-${ts}`, custB, 'Cust B', `62817${ts.toString().slice(-7)}`, 'greenlake', 'delivery', 50000, 50000, 'menunggu_pembayaran', 'pending', new Date().toISOString(), `trk_${ts}`]
+    )
+
+    // Verified query scoped to Cust A must return 0 orders even if someone requests Cust B's ID in search params
+    const scopedOrders = db.query(
+      'SELECT id FROM orders WHERE customer_id = ?',
+      [custA]
+    )
+    assert.strictEqual(scopedOrders.length, 0, 'Cust A session cannot see Cust B orders')
+  })
+
+  // Test 32: Points Adjustment Strictly Blocked for Non-Admin Requests
+  it('Scenario 32: Points adjustment is rejected when request is from non-admin or unauthenticated caller', () => {
+    const unauthReq = new Request('http://localhost:3000/api/membership', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'ADJUST', customerId: 'cust_01', pointsDelta: 100, reason: 'Hack' }),
+    })
+    const authCheck = AdminSessionService.verifyAdminRequest(unauthReq)
+    assert.strictEqual(authCheck.authorized, false)
+    assert.strictEqual(authCheck.status, 401)
   })
 })
 

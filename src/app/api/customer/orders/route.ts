@@ -1,28 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { MembershipService } from '@/lib/membership/membershipService'
+import { SessionService, SESSION_COOKIE_NAME } from '@/lib/auth/sessionService'
 
 export async function GET(req: NextRequest) {
   try {
+    const sessionToken = req.cookies.get(SESSION_COOKIE_NAME)?.value ||
+      (req.headers.get('authorization')?.startsWith('Bearer ') ? req.headers.get('authorization')?.slice(7).trim() : null)
+    const sessionCustomer = sessionToken ? SessionService.getCustomerFromToken(sessionToken) : null
+
+    if (!sessionCustomer) {
+      return NextResponse.json(
+        { error: 'Silakan login terlebih dahulu untuk melihat riwayat pesanan.' },
+        { status: 401 }
+      )
+    }
+
     const { searchParams } = new URL(req.url)
-    const phone = searchParams.get('phone')?.trim()
-    const customerId = searchParams.get('customerId')?.trim()
     const status = searchParams.get('status')?.trim()
     const search = searchParams.get('search')?.trim()
 
-    if (!phone && !customerId) {
-      return NextResponse.json({ error: 'Identitas customer (nomor telepon atau ID) wajib disertakan.' }, { status: 400 })
-    }
-
-    // Security: Only query orders belonging to this customer
+    // Security: Strictly query orders belonging to authenticated session customer
     let sql = `
       SELECT o.*,
              p.bank_name, p.status as payment_txn_status, p.reference_number as payment_reference
       FROM orders o
       LEFT JOIN payments p ON o.id = p.order_id
-      WHERE (o.customer_phone = ? OR o.customer_id = ?)
+      WHERE (o.customer_id = ? OR o.customer_phone = ?)
     `
-    const params: any[] = [phone || '', customerId || '']
+    const params: any[] = [sessionCustomer.id, sessionCustomer.phone]
 
     // Optional status filter
     if (status && status !== 'semua') {

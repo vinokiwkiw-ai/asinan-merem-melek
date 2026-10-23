@@ -1,16 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { SessionService, SESSION_COOKIE_NAME } from '@/lib/auth/sessionService'
+
+function getSessionCustomer(req: NextRequest) {
+  const sessionToken = req.cookies.get(SESSION_COOKIE_NAME)?.value ||
+    (req.headers.get('authorization')?.startsWith('Bearer ') ? req.headers.get('authorization')?.slice(7).trim() : null)
+  return sessionToken ? SessionService.getCustomerFromToken(sessionToken) : null
+}
 
 export async function GET(req: NextRequest) {
   try {
-    const customerId = req.nextUrl.searchParams.get('customerId')
-    if (!customerId) {
-      return NextResponse.json({ error: 'Customer ID wajib disertakan.' }, { status: 400 })
+    const sessionCustomer = getSessionCustomer(req)
+    if (!sessionCustomer) {
+      return NextResponse.json({ error: 'Silakan login terlebih dahulu untuk melihat alamat tersimpan.' }, { status: 401 })
     }
 
     const addresses = db.query(
       'SELECT * FROM saved_addresses WHERE customer_id = ? ORDER BY is_default DESC, created_at DESC',
-      [customerId]
+      [sessionCustomer.id]
     )
 
     return NextResponse.json({ addresses })
@@ -21,9 +28,13 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const sessionCustomer = getSessionCustomer(req)
+    if (!sessionCustomer) {
+      return NextResponse.json({ error: 'Silakan login terlebih dahulu untuk menyimpan alamat.' }, { status: 401 })
+    }
+
     const body = await req.json()
     const {
-      customerId,
       label,
       recipientName,
       phone,
@@ -37,7 +48,7 @@ export async function POST(req: NextRequest) {
       isDefault,
     } = body
 
-    if (!customerId || !recipientName || !phone || !fullAddress) {
+    if (!recipientName || !phone || !fullAddress) {
       return NextResponse.json({ error: 'Data alamat tidak lengkap.' }, { status: 400 })
     }
 
@@ -45,7 +56,7 @@ export async function POST(req: NextRequest) {
 
     db.transaction(() => {
       if (isDefault) {
-        db.run('UPDATE saved_addresses SET is_default = 0 WHERE customer_id = ?', [customerId])
+        db.run('UPDATE saved_addresses SET is_default = 0 WHERE customer_id = ?', [sessionCustomer.id])
       }
 
       db.run(
@@ -55,7 +66,7 @@ export async function POST(req: NextRequest) {
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           addressId,
-          customerId,
+          sessionCustomer.id,
           label || 'Rumah',
           recipientName.trim(),
           phone.trim(),
@@ -79,14 +90,17 @@ export async function POST(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
-    const addressId = req.nextUrl.searchParams.get('id')
-    const customerId = req.nextUrl.searchParams.get('customerId')
-
-    if (!addressId || !customerId) {
-      return NextResponse.json({ error: 'Parameter tidak lengkap.' }, { status: 400 })
+    const sessionCustomer = getSessionCustomer(req)
+    if (!sessionCustomer) {
+      return NextResponse.json({ error: 'Silakan login terlebih dahulu untuk menghapus alamat.' }, { status: 401 })
     }
 
-    db.run('DELETE FROM saved_addresses WHERE id = ? AND customer_id = ?', [addressId, customerId])
+    const addressId = req.nextUrl.searchParams.get('id')
+    if (!addressId) {
+      return NextResponse.json({ error: 'Parameter ID alamat wajib disertakan.' }, { status: 400 })
+    }
+
+    db.run('DELETE FROM saved_addresses WHERE id = ? AND customer_id = ?', [addressId, sessionCustomer.id])
     return NextResponse.json({ success: true, message: 'Alamat berhasil dihapus.' })
   } catch (error: any) {
     return NextResponse.json({ error: error.message || 'Gagal menghapus alamat.' }, { status: 500 })

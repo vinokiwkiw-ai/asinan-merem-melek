@@ -126,6 +126,20 @@ function runMigrations(database: DatabaseSync) {
   if (!payColSet.has('gateway_payload')) {
     database.exec("ALTER TABLE payments ADD COLUMN gateway_payload TEXT;")
   }
+
+  // 8. Ensure Admin Sessions table exists
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS admin_sessions (
+      id TEXT PRIMARY KEY,
+      admin_id TEXT NOT NULL,
+      session_token TEXT UNIQUE NOT NULL,
+      ip_address TEXT,
+      user_agent TEXT,
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (admin_id) REFERENCES admin_users(id) ON DELETE CASCADE
+    );
+  `)
 }
 
 function ensureSeeded(database: DatabaseSync) {
