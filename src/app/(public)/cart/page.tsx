@@ -40,18 +40,52 @@ export default function CartPage() {
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
 
-  // Check verified customer session on mount
+  // Check verified customer session on mount (with immediate localStorage restoration)
   useEffect(() => {
-    fetch('/api/auth/customer')
+    let localToken: string | null = null
+    let localCustomer: any = null
+
+    try {
+      const storedSession = localStorage.getItem('amm_customer_session')
+      localToken = localStorage.getItem('amm_customer_token')
+      if (storedSession) {
+        localCustomer = JSON.parse(storedSession)
+        setCustomerSession(localCustomer)
+        setCustomerName((prev) => prev || localCustomer.name || '')
+        setCustomerPhone((prev) => prev || localCustomer.phone || '')
+        setCheckingAuth(false)
+      }
+    } catch (e) {
+      console.error('Failed to parse cached session:', e)
+    }
+
+    // Verify session with server in background
+    const headers: Record<string, string> = {}
+    if (localToken) {
+      headers['Authorization'] = `Bearer ${localToken}`
+    }
+
+    fetch('/api/auth/customer', {
+      headers,
+      credentials: 'include',
+    })
       .then((res) => res.json())
       .then((data) => {
         if (data.authenticated && data.customer) {
           setCustomerSession(data.customer)
           setCustomerName((prev) => prev || data.customer.name || '')
           setCustomerPhone((prev) => prev || data.customer.phone || '')
+          localStorage.setItem('amm_customer_session', JSON.stringify(data.customer))
+          if (data.sessionToken) {
+            localStorage.setItem('amm_customer_token', data.sessionToken)
+          }
+        } else if (!localCustomer) {
+          setCustomerSession(null)
         }
       })
-      .catch(console.error)
+      .catch((err) => {
+        console.warn('Background auth check failed:', err)
+      })
       .finally(() => setCheckingAuth(false))
   }, [])
 
@@ -243,7 +277,16 @@ export default function CartPage() {
   const handlePlaceOrder = async () => {
     setOrderError(null)
 
-    if (!customerSession) {
+    let currentSession = customerSession
+    let token = typeof window !== 'undefined' ? localStorage.getItem('amm_customer_token') : null
+    if (!currentSession && typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('amm_customer_session')
+        if (stored) currentSession = JSON.parse(stored)
+      } catch {}
+    }
+
+    if (!currentSession) {
       setOrderError('Silakan masuk ke akun member Anda terlebih dahulu untuk membuat pesanan.')
       router.push('/login?redirect=/cart')
       return
@@ -316,14 +359,29 @@ export default function CartPage() {
         hasGreetingCard: giftConfig.hasGreetingCard,
       }
 
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      }
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      }
+
       const res = await fetch('/api/checkout/submit', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
+        credentials: 'include',
         body: JSON.stringify(payload),
       })
 
       const data = await res.json()
       if (!res.ok) {
+        if (res.status === 401 || data.requireLogin) {
+          localStorage.removeItem('amm_customer_session')
+          localStorage.removeItem('amm_customer_token')
+          setCustomerSession(null)
+          router.push('/login?redirect=/cart')
+          throw new Error('Sesi masuk Anda telah berakhir. Silakan masuk kembali.')
+        }
         throw new Error(data.error || 'Gagal membuat pesanan.')
       }
 

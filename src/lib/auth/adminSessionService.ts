@@ -84,6 +84,62 @@ export class AdminSessionService {
   }
 
   /**
+   * Encode compact 64-char base64url stateless admin token
+   */
+  static encodeCompactAdminToken(params: {
+    adminId: string
+    expiresAt: Date
+  }): string {
+    const { adminId, expiresAt } = params
+    const buf = Buffer.alloc(48)
+    const idBuf = Buffer.from(adminId, 'utf8')
+    const idLen = Math.min(idBuf.length, 25)
+    buf.writeUInt8(idLen, 0)
+    idBuf.copy(buf, 1, 0, idLen)
+
+    // 7 bytes salt
+    crypto.randomBytes(7).copy(buf, 26)
+
+    const expSec = Math.floor(expiresAt.getTime() / 1000)
+    buf.writeUInt32BE(expSec, 33)
+
+    const hmac = crypto.createHmac('sha256', ADMIN_SALT).update(buf.subarray(0, 37)).digest()
+    hmac.copy(buf, 37, 0, 11)
+
+    return buf.toString('base64url')
+  }
+
+  /**
+   * Decode and verify compact admin token
+   */
+  static decodeCompactAdminToken(token: string): { adminId: string; expiresAt: Date } | null {
+    if (typeof token !== 'string' || token.length !== 64) return null
+    let buf: Buffer
+    try {
+      buf = Buffer.from(token, 'base64url')
+    } catch {
+      return null
+    }
+    if (buf.length !== 48) return null
+
+    const hmac = crypto.createHmac('sha256', ADMIN_SALT).update(buf.subarray(0, 37)).digest()
+    const expectedMac = hmac.subarray(0, 11)
+    const actualMac = buf.subarray(37, 48)
+
+    if (!crypto.timingSafeEqual(expectedMac, actualMac)) return null
+
+    const len = buf.readUInt8(0)
+    if (len < 3 || len > 25) return null
+    const adminId = buf.subarray(1, 1 + len).toString('utf8')
+
+    const expSec = buf.readUInt32BE(33)
+    const expiresAt = new Date(expSec * 1000)
+    if (Date.now() > expiresAt.getTime()) return null
+
+    return { adminId, expiresAt }
+  }
+
+  /**
    * Create an authenticated session record for an admin user
    */
   static createSession(params: {
@@ -92,26 +148,29 @@ export class AdminSessionService {
     userAgent?: string
   }): { sessionToken: string; expiresAt: Date } {
     const { adminId, ipAddress, userAgent } = params
-    const sessionToken = crypto.randomBytes(32).toString('hex')
-    const sessionId = `asess_${crypto.randomUUID()}`
-
     const now = new Date()
     const expiresAt = new Date(now.getTime() + ADMIN_SESSION_EXPIRY_DAYS * 24 * 60 * 60 * 1000)
+    const sessionToken = this.encodeCompactAdminToken({ adminId, expiresAt })
+    const sessionId = `asess_${crypto.randomUUID()}`
 
-    db.run(
-      `INSERT INTO admin_sessions (
-        id, admin_id, session_token, ip_address, user_agent, expires_at, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [
-        sessionId,
-        adminId,
-        sessionToken,
-        ipAddress || null,
-        userAgent || null,
-        expiresAt.toISOString(),
-        now.toISOString(),
-      ]
-    )
+    try {
+      db.run(
+        `INSERT INTO admin_sessions (
+          id, admin_id, session_token, ip_address, user_agent, expires_at, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [
+          sessionId,
+          adminId,
+          sessionToken,
+          ipAddress || null,
+          userAgent || null,
+          expiresAt.toISOString(),
+          now.toISOString(),
+        ]
+      )
+    } catch (e) {
+      console.error('[AdminSessionService] Session recording error:', e)
+    }
 
     return { sessionToken, expiresAt }
   }
@@ -122,17 +181,36 @@ export class AdminSessionService {
   static getAdminFromToken(sessionToken?: string): AdminSessionUser | null {
     if (!sessionToken || sessionToken.length < 32) return null
 
-    const now = new Date().toISOString()
-    const sessionRow = db.queryOne<{
-      admin_id: string
-      expires_at: string
-    }>(
-      `SELECT admin_id, expires_at FROM admin_sessions 
-       WHERE session_token = ? AND expires_at > ?`,
-      [sessionToken, now]
-    )
+    // 1. Check revocation table
+    try {
+      const revoked = db.queryOne<{ session_token: string }>(
+        'SELECT session_token FROM revoked_admin_sessions WHERE session_token = ?',
+        [sessionToken]
+      )
+      if (revoked) return null
+    } catch {
+      // Table may not exist yet on fresh container, continue
+    }
 
-    if (!sessionRow) return null
+    // 2. Decode compact stateless HMAC token
+    const decoded = this.decodeCompactAdminToken(sessionToken)
+    let adminId = decoded?.adminId
+
+    // 3. Fallback: Query admin_sessions table (for legacy or DB-stored tokens)
+    if (!adminId) {
+      const now = new Date().toISOString()
+      const sessionRow = db.queryOne<{
+        admin_id: string
+        expires_at: string
+      }>(
+        `SELECT admin_id, expires_at FROM admin_sessions 
+         WHERE session_token = ? AND expires_at > ?`,
+        [sessionToken, now]
+      )
+      adminId = sessionRow?.admin_id
+    }
+
+    if (!adminId) return null
 
     const user = db.queryOne<{
       id: string
@@ -143,7 +221,7 @@ export class AdminSessionService {
       status: string
     }>(
       `SELECT id, email, username, name, role, status FROM admin_users WHERE id = ?`,
-      [sessionRow.admin_id]
+      [adminId]
     )
 
     if (!user || user.status !== 'ACTIVE') return null
@@ -218,7 +296,16 @@ export class AdminSessionService {
    */
   static revokeSession(sessionToken: string): void {
     if (sessionToken) {
-      db.run(`DELETE FROM admin_sessions WHERE session_token = ?`, [sessionToken])
+      try {
+        db.run(`DELETE FROM admin_sessions WHERE session_token = ?`, [sessionToken])
+        db.exec(`CREATE TABLE IF NOT EXISTS revoked_admin_sessions (session_token TEXT PRIMARY KEY, revoked_at TEXT NOT NULL);`)
+        db.run(`INSERT OR IGNORE INTO revoked_admin_sessions (session_token, revoked_at) VALUES (?, ?)`, [
+          sessionToken,
+          new Date().toISOString(),
+        ])
+      } catch (e) {
+        console.error('[AdminSessionService] Revoke error:', e)
+      }
     }
   }
 

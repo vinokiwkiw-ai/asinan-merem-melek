@@ -8,7 +8,8 @@ const SALT = 'amm_customer_salt_2026'
 
 export async function GET(req: NextRequest) {
   try {
-    const token = req.cookies.get(SESSION_COOKIE_NAME)?.value
+    const token = req.cookies.get(SESSION_COOKIE_NAME)?.value ||
+      (req.headers.get('authorization')?.startsWith('Bearer ') ? req.headers.get('authorization')?.slice(7).trim() : null)
     if (!token) {
       return NextResponse.json({ authenticated: false, customer: null })
     }
@@ -26,6 +27,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       authenticated: true,
+      sessionToken: token,
       customer: {
         ...customer,
         points: pointsRow ? Number(pointsRow.total_points) : 0,
@@ -133,6 +135,7 @@ export async function POST(req: NextRequest) {
 
       const response = NextResponse.json({
         success: true,
+        sessionToken,
         message: 'Verifikasi OTP berhasil. Selamat datang di Asinan Merem Melek!',
         customer: {
           ...customer,
@@ -148,6 +151,7 @@ export async function POST(req: NextRequest) {
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
         path: '/',
+        maxAge: 30 * 24 * 60 * 60,
         expires: expiresAt,
       })
 
@@ -156,7 +160,8 @@ export async function POST(req: NextRequest) {
 
     // 3. ACTION: LOGOUT
     if (action === 'LOGOUT') {
-      const token = req.cookies.get(SESSION_COOKIE_NAME)?.value
+      const token = req.cookies.get(SESSION_COOKIE_NAME)?.value ||
+        (req.headers.get('authorization')?.startsWith('Bearer ') ? req.headers.get('authorization')?.slice(7).trim() : null)
       if (token) {
         SessionService.revokeSession(token)
       }
@@ -201,6 +206,7 @@ export async function POST(req: NextRequest) {
 
       const response = NextResponse.json({
         success: true,
+        sessionToken,
         customer: {
           id: customerId,
           phone: normalizedPhone,
@@ -216,6 +222,7 @@ export async function POST(req: NextRequest) {
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
         path: '/',
+        maxAge: 30 * 24 * 60 * 60,
         expires: expiresAt,
       })
 
@@ -252,6 +259,7 @@ export async function POST(req: NextRequest) {
 
       const response = NextResponse.json({
         success: true,
+        sessionToken,
         customer,
       })
 
@@ -262,6 +270,7 @@ export async function POST(req: NextRequest) {
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
         path: '/',
+        maxAge: 30 * 24 * 60 * 60,
         expires: expiresAt,
       })
 

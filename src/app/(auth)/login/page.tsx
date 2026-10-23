@@ -106,11 +106,14 @@ function CustomerLoginForm() {
 
       if (data.customer) {
         localStorage.setItem('amm_customer_session', JSON.stringify(data.customer));
+        if (data.sessionToken) {
+          localStorage.setItem('amm_customer_token', data.sessionToken);
+        }
         setSuccessMsg('Verifikasi berhasil! Mengalihkan...');
         setTimeout(() => {
           router.push(redirectUrl);
           router.refresh();
-        }, 800);
+        }, 600);
       }
     } catch (err: any) {
       setError(err.message || 'Gagal memverifikasi OTP.');

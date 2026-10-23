@@ -48,12 +48,40 @@ export default function AccountPage() {
   useEffect(() => {
     // Check verified server session first
     const initSession = async () => {
+      let localToken: string | null = null
+      let localCustomer: any = null
+
       try {
-        const res = await fetch('/api/auth/customer')
+        const cached = localStorage.getItem('amm_customer_session')
+        localToken = localStorage.getItem('amm_customer_token')
+        if (cached) {
+          localCustomer = JSON.parse(cached)
+          setCustomer(localCustomer)
+          loadMembership(localCustomer.id)
+          loadAddresses(localCustomer.id)
+          loadOrders(localCustomer.phone)
+        }
+      } catch (e) {
+        console.warn('Failed to parse cached session:', e)
+      }
+
+      try {
+        const headers: Record<string, string> = {}
+        if (localToken) {
+          headers['Authorization'] = `Bearer ${localToken}`
+        }
+
+        const res = await fetch('/api/auth/customer', {
+          headers,
+          credentials: 'include',
+        })
         const data = await res.json()
         if (data.authenticated && data.customer) {
           setCustomer(data.customer)
           localStorage.setItem('amm_customer_session', JSON.stringify(data.customer))
+          if (data.sessionToken) {
+            localStorage.setItem('amm_customer_token', data.sessionToken)
+          }
           loadMembership(data.customer.id)
           loadAddresses(data.customer.id)
           loadOrders(data.customer.phone)
@@ -61,11 +89,16 @@ export default function AccountPage() {
         }
       } catch (err) {
         console.error('Session check error:', err)
+        // If server check fails temporarily (network issue), but local session exists, stay logged in
+        if (localCustomer) return
       }
 
-      // If unauthenticated, clear any stale client cache and redirect to login
-      localStorage.removeItem('amm_customer_session')
-      router.push('/login?redirect=/account')
+      // If truly unauthenticated, clear stale cache and redirect
+      if (!localCustomer) {
+        localStorage.removeItem('amm_customer_session')
+        localStorage.removeItem('amm_customer_token')
+        router.push('/login?redirect=/account')
+      }
     }
 
     initSession()
@@ -183,13 +216,18 @@ export default function AccountPage() {
 
   const handleLogout = async () => {
     try {
+      const token = localStorage.getItem('amm_customer_token')
       await fetch('/api/auth/customer', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ action: 'LOGOUT' }),
       })
     } catch {}
     localStorage.removeItem('amm_customer_session')
+    localStorage.removeItem('amm_customer_token')
     router.push('/login')
   }
 
