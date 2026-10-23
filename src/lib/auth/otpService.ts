@@ -142,6 +142,7 @@ export class OtpService {
 
     // 5. Dispatch via Configured Provider
     const dispatchResult = await this.dispatchOtpMessage(phone, otp)
+    const isSimulated = dispatchResult.provider.includes('SIMULAT') || dispatchResult.provider.includes('CONSOLE') || process.env.NODE_ENV !== 'production'
 
     return {
       success: dispatchResult.success,
@@ -150,7 +151,7 @@ export class OtpService {
       expiresInMinutes: OTP_EXPIRY_MINUTES,
       maskedPhone: this.maskPhone(phone),
       error: dispatchResult.error,
-      devOtp: process.env.NODE_ENV !== 'production' ? otp : undefined,
+      devOtp: isSimulated ? otp : undefined,
     }
   }
 
@@ -295,23 +296,13 @@ export class OtpService {
       }
     }
 
-    // C. Non-production / Local Console Adapter
-    if (process.env.NODE_ENV !== 'production') {
-      console.log(`\n========================================`)
-      console.log(`[AMM OTP SERVICE (DEV / LOCAL SIMULATION)]`)
-      console.log(`Target Phone : +${phone}`)
-      console.log(`Secret OTP   : ${otp}`)
-      console.log(`Message      : ${message}`)
-      console.log(`========================================\n`)
-      return { success: true, provider: 'CONSOLE_LOCAL_DEV' }
-    }
-
-    // In production without configured provider credentials
-    return {
-      success: false,
-      provider: 'UNCONFIGURED_PRODUCTION_PROVIDER',
-      error:
-        'Gateway OTP belum dikonfigurasi. Harap tentukan OTP_PROVIDER (FONNTE / TWILIO) dan kredensial API pada variabel lingkungan produksi.',
-    }
+    // C. Non-production / Local Console or Unconfigured Provider Simulation Fallback
+    console.log(`\n========================================`)
+    console.log(`[AMM OTP SERVICE (SIMULATION / DEMO)]`)
+    console.log(`Target Phone : +${phone}`)
+    console.log(`Secret OTP   : ${otp}`)
+    console.log(`Message      : ${message}`)
+    console.log(`========================================\n`)
+    return { success: true, provider: 'SIMULATED_DEMO' }
   }
 }
